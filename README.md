@@ -186,6 +186,7 @@ The skill library includes knowledge extracted and adapted from these open-sourc
 - **[agency-agents](https://github.com/msitarzewski/agency-agents)** by [@msitarzewski](https://github.com/msitarzewski) — 185 agent templates for engineering, product, design, project management, and more.
 
 - **[superpowers](https://github.com/obra/superpowers)** by [@obra](https://github.com/obra) — AI agent workflow framework with composable skills for systematic debugging, TDD, brainstorming, plan writing, and subagent-driven development. MIT License.
+- **[gstack](https://github.com/garrytan/gstack)** by [@garrytan](https://github.com/garrytan) — Full dev lifecycle toolkit with skills for code review, security audits, QA testing, shipping, canary monitoring, and engineering retrospectives.
 
 Skills were extracted by stripping identity/personality content and preserving actionable workflows, checklists, and domain frameworks. Original source attribution is included in each skill file's frontmatter.
 
