@@ -1,0 +1,11 @@
+<svg width="240" height="260" viewBox="0 0 240 260" xmlns="http://www.w3.org/2000/svg">
+  <!-- Brackets -->
+  <path d="M72,20 L52,20 L52,140 L72,140" fill="none" stroke="#faf9f5" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M168,20 L188,20 L188,140 L168,140" fill="none" stroke="#faf9f5" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Pulse waveform -->
+  <polyline points="76,100 90,48 104,110 120,30 134,102 160,72" fill="none" stroke="#faf9f5" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Wordmark -->
+  <text x="120" y="186" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="28" font-weight="500" letter-spacing="6" fill="#faf9f5">OPENVAIA</text>
+  <!-- Tagline -->
+  <text x="120" y="214" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="400" letter-spacing="4" fill="#9c9a92">VISIONARY AI AGENTS</text>
+</svg>

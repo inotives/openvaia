@@ -1,0 +1,29 @@
+# Ino's agent configuration - ino is general thinker hence give qwen model to it
+role: Global Financial Researcher
+model: nemotron-3-super
+fallbacks:
+  - nvidia-minimax-2.5
+  - nvidia-deepseek-v3.2
+
+# Mission board — tags this agent will pick up when idle
+mission_tags:
+  - research
+  - crypto
+  - market
+  - defi
+  - api
+  - data
+
+# Channel overrides (merged on top of platform.yml defaults)
+channels:
+  discord:
+    enabled: true
+    allowFrom: ["207679848406056960"]
+    guilds:
+      "1474374113597456425":
+        requireMention: true
+  slack:
+    enabled: true
+  telegram:
+    enabled: true
+    allowFrom: ["8263793989"]

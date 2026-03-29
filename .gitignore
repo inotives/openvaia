@@ -1,0 +1,31 @@
+# Credentials
+.env
+agents/*/.env
+.env.local
+ui/.env.local
+
+# Backups
+agents/*/backups/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Node
+node_modules/
+.next/
+
+# Docker
+postgres_data/
+
+# External resources
+resources/
+
+# OS
+.DS_Store

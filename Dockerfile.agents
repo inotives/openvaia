@@ -1,0 +1,4 @@
+FROM inotagent-base
+
+# Copy all agent directories into the image
+COPY agents/ /app/agents/

@@ -1,0 +1,33 @@
+{
+  "name": "openvaia-ui",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 7860",
+    "build": "next build",
+    "start": "next start --port 7860"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.6.1",
+    "@ant-design/nextjs-registry": "^1.0.2",
+    "@ant-design/v5-patch-for-react-19": "^1.0.3",
+    "@types/d3": "^7.4.3",
+    "antd": "^5.24.7",
+    "d3": "^7.9.0",
+    "next": "^15.3.2",
+    "next-auth": "^5.0.0-beta.30",
+    "pixi-viewport": "^6.0.3",
+    "pixi.js": "^8.17.1",
+    "postgres": "^3.4.7",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "typescript": "^5.8.3"
+  }
+}

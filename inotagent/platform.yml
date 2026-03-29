@@ -1,0 +1,51 @@
+# Platform-wide defaults
+
+llm:
+  # Default model if agent.yml doesn't specify one
+  # Must be an id from core/models.yml
+  default_model: nvidia-minimax-2.1
+
+# Channel defaults — applied to all agents unless overridden in agent.yml
+channels:
+  defaults:
+    groupPolicy: allowlist
+    dmPolicy: pairing
+    historyLimit: 20
+  discord:
+    enabled: false          # agents opt-in via agent.yml
+    token_env: DISCORD_BOT_TOKEN
+    dmPolicy: pairing
+    groupPolicy: allowlist
+    replyToMode: "off"
+    streaming: "off"
+    textChunkLimit: 2000
+    threadBindings:
+      enabled: true
+      idleHours: 24
+    execApprovals:
+      enabled: true
+      target: channel
+  slack:
+    enabled: false          # agents opt-in via agent.yml
+    bot_token_env: SLACK_BOT_TOKEN
+    app_token_env: SLACK_APP_TOKEN
+    textChunkLimit: 4000
+  telegram:
+    enabled: false          # agents opt-in via agent.yml
+    token_env: TELEGRAM_BOT_TOKEN
+    textChunkLimit: 4096
+
+# Prompt enhancer — lightweight LLM call to refine rough instructions
+prompt_gen:
+  default_model: nvidia-minimax-2.5
+  fallbacks:
+    - nvidia-mistral-large-3
+  max_tokens: 1024
+
+# Embedding model for semantic memory search (pgvector)
+# Uses the same NVIDIA API key as LLM models — no extra cost
+embedding:
+  model: nvidia/llama-nemotron-embed-1b-v2
+  dimensions: 1024
+  base_url: https://integrate.api.nvidia.com/v1
+  api_key_env: NVIDIA_API_KEY

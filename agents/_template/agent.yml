@@ -1,0 +1,22 @@
+# {{AGENT_NAME}}'s agent configuration
+model: nvidia-minimax-2.5
+fallbacks:
+  - nvidia-deepseek-v3.1
+  - nvidia-qwen-3.5-122b
+
+# Mission board — tags this agent will pick up when idle
+mission_tags: []
+
+# Channel overrides (merged on top of platform.yml defaults)
+channels:
+  discord:
+    enabled: true
+    allowFrom: ["{{DISCORD_OWNER_ID}}"]
+    guilds:
+      "{{DISCORD_GUILD_ID}}":
+        requireMention: true
+  slack:
+    enabled: false
+  telegram:
+    enabled: false
+    allowFrom: ["{{TELEGRAM_USER_ID}}"]

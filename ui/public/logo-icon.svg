@@ -1,0 +1,8 @@
+<svg width="40" height="40" viewBox="126 62 108 92" xmlns="http://www.w3.org/2000/svg">
+  <!-- Left bracket -->
+  <path d="M148,68 L132,68 L132,148 L148,148" fill="none" stroke="#faf9f5" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Right bracket -->
+  <path d="M212,68 L228,68 L228,148 L212,148" fill="none" stroke="#faf9f5" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Pulse waveform -->
+  <polyline points="152,118 163,86 174,130 185,72 196,120 208,102" fill="none" stroke="#faf9f5" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

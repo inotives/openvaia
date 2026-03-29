@@ -1,0 +1,172 @@
+name: openvaia
+
+services:
+  # Optional — only starts with: docker compose --profile infra up
+  # Skip this if using an existing Postgres instance
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: openvaia_postgres
+    profiles: ["infra"]
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - platform
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Multi-agent container — all agents in one container
+  agents:
+    build:
+      context: .
+      dockerfile: Dockerfile.agents
+    container_name: openvaia_agents
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      AGENTS: ${AGENTS:-ino,robin}
+      AGENT_NAME: ${AGENTS:-ino,robin}
+      PLATFORM_SCHEMA: ${PLATFORM_SCHEMA:-platform}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${INTERNAL_POSTGRES_PORT:-5432}
+      WORKSPACE_DIR: /workspace
+    volumes:
+      - agents_workspace:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    networks:
+      - platform
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4g
+
+  # Single-agent containers (legacy — use 'agents' service instead)
+  robin:
+    build:
+      context: .
+      dockerfile: agents/robin/Dockerfile
+    container_name: agent_robin
+    restart: unless-stopped
+    profiles: ["single-agent"]
+    env_file:
+      - .env
+      - agents/robin/.env
+    environment:
+      AGENT_NAME: robin
+      PLATFORM_SCHEMA: ${PLATFORM_SCHEMA:-platform}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${INTERNAL_POSTGRES_PORT:-5432}
+    volumes:
+      - robin_workspace:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    networks:
+      - platform
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2g
+
+  ino:
+    build:
+      context: .
+      dockerfile: agents/ino/Dockerfile
+    container_name: agent_ino
+    restart: unless-stopped
+    profiles: ["single-agent"]
+    env_file:
+      - .env
+      - agents/ino/.env
+    environment:
+      AGENT_NAME: ino
+      PLATFORM_SCHEMA: ${PLATFORM_SCHEMA:-platform}
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${INTERNAL_POSTGRES_PORT:-5432}
+    volumes:
+      - ino_workspace:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    networks:
+      - platform
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2g
+
+  ui:
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    container_name: openvaia_ui
+    env_file: .env
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${INTERNAL_POSTGRES_PORT:-5432}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:7860}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_ALLOWED_EMAILS: ${GOOGLE_ALLOWED_EMAILS:-}
+      UI_USERNAME: ${UI_USERNAME:-}
+      UI_PASSWORD: ${UI_PASSWORD:-}
+    ports:
+      - "${UI_PORT:-7860}:7860"
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    networks:
+      - platform
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+
+networks:
+  platform:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  agents_workspace:
+  robin_workspace:
+  ino_workspace:
