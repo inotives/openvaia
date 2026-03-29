@@ -185,6 +185,8 @@ The skill library includes knowledge extracted and adapted from these open-sourc
 - **[awesome-openclaw-agents](https://github.com/mergisi/awesome-openclaw-agents)** by [@mergisi](https://github.com/mergisi) — 187 production-ready AI agent templates across 24 categories. MIT License.
 - **[agency-agents](https://github.com/msitarzewski/agency-agents)** by [@msitarzewski](https://github.com/msitarzewski) — 185 agent templates for engineering, product, design, project management, and more.
 
+- **[superpowers](https://github.com/obra/superpowers)** by [@obra](https://github.com/obra) — AI agent workflow framework with composable skills for systematic debugging, TDD, brainstorming, plan writing, and subagent-driven development. MIT License.
+
 Skills were extracted by stripping identity/personality content and preserving actionable workflows, checklists, and domain frameworks. Original source attribution is included in each skill file's frontmatter.
 
 - **[Pixel Spaces](https://netherzapdos.itch.io/pixel-spaces)** by [@NetherZapdos](https://netherzapdos.itch.io/) — Pixel art office furniture and NPC sprite assets used in the gamified office UI.
