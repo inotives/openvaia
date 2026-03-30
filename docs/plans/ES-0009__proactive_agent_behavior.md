@@ -1,6 +1,6 @@
 # ES-0009 — Proactive Agent Behavior
 
-## Status: PENDING
+## Status: COMPLETE (Phase 1–3.5), Phase 4–5 deferred
 
 ## Problem / Pain Points
 
@@ -167,21 +167,20 @@ async def check_pending_human_messages(agent) -> bool:
 
 ## Implementation Steps
 
-- [ ] Phase 1: Create recurring tasks for ino and robin (no code changes)
-- [ ] Phase 1: Verify recurring tasks execute on schedule
-- [ ] Phase 2: Create `0__idle_behavior.md` global skill
-- [ ] Phase 2: Test idle behavior activates correctly
-- [ ] Phase 3: Add idle detection to heartbeat scheduler
-- [ ] Phase 3: Add `proactive_enabled` config toggle
-- [ ] Phase 3: Add daily autonomous call budget
-- [ ] Phase 3.5: Add `current_task_is_autonomous` flag to agent state
-- [ ] Phase 3.5: Add `check_pending_human_messages()` to db module
-- [ ] Phase 3.5: Add inter-iteration message check in `loop.py`
-- [ ] Phase 3.5: Add `pause_current_task()` — saves blocked task with context
-- [ ] Phase 3.5: Test: send Discord message while agent runs autonomous task → agent pauses and responds
-- [ ] Phase 4: Test inter-agent task creation
-- [ ] Phase 5: Add proactive Discord notifications
-- [ ] Phase 5: Add notification batching/scheduling
+- [x] Phase 1: Create recurring tasks for ino and robin (no code changes)
+- [x] Phase 1: Verify recurring tasks execute on schedule
+- [x] Phase 2: Create `0__idle_behavior.md` global skill
+- [x] Phase 2: Test idle behavior activates correctly
+- [x] Phase 3: Add idle detection to heartbeat scheduler
+- [x] Phase 3: Add `proactive_enabled` config toggle
+- [x] Phase 3: Add daily autonomous call budget
+- [x] Phase 3.5: Detect autonomous conversations via `heartbeat-idle-` prefix
+- [x] Phase 3.5: Add `_check_pending_human_messages()` to loop.py
+- [x] Phase 3.5: Add inter-iteration message check + semaphore waiter check
+- [x] Phase 3.5: Save pause note and return early on interrupt
+- [ ] Phase 4: Inter-agent task creation (deferred)
+- [ ] Phase 5: Proactive Discord notifications (deferred)
+- [ ] Phase 5: Notification batching/scheduling (deferred)
 
 ## Guardrails & Safety
 

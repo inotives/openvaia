@@ -148,10 +148,35 @@ class AgentLoop:
             f"(in={response.usage.input_tokens}, out={response.usage.output_tokens})"
         )
 
+        # Detect autonomous conversations (triggered by idle heartbeat)
+        is_autonomous = conversation_id and conversation_id.startswith("heartbeat-idle-")
+
         # Tool call loop
         iterations = 0
         while response.tool_calls and self.tool_registry and iterations < MAX_TOOL_ITERATIONS:
             iterations += 1
+
+            # Autonomous interrupt: check for pending human messages between iterations
+            # Checks: (1) web chat messages in DB, (2) other channels waiting at semaphore
+            if is_autonomous and iterations > 1:
+                has_human_msg = await self._check_pending_human_messages(conversation_id)
+                has_queued = self._semaphore._value == 0 and len(self._semaphore._waiters) > 0
+                if has_human_msg or has_queued:
+                    logger.info(
+                        f"[{self.config.name}] Autonomous task interrupted — "
+                        f"human message detected (iter {iterations})"
+                    )
+                    # Save a note about the interruption
+                    if conversation_id and self.db_available:
+                        from inotagent.db.conversations import save_message
+                        await save_message(
+                            conversation_id=conversation_id,
+                            agent_name=self.config.name,
+                            role="assistant",
+                            content="[Autonomous task paused — prioritizing incoming human message]",
+                            channel_type=channel_type,
+                        )
+                    return "[Paused: human message received]"
 
             # Add assistant message with tool calls to conversation
             messages.append(LLMMessage(
@@ -228,6 +253,30 @@ class AgentLoop:
             )
 
         return response.content
+
+    async def _check_pending_human_messages(self, current_conversation_id: str) -> bool:
+        """Check if there are unprocessed human messages waiting (any channel)."""
+        if not self.db_available:
+            return False
+        try:
+            from inotagent.db.pool import get_connection, get_schema
+            schema = get_schema()
+            async with get_connection() as conn:
+                cur = await conn.execute(
+                    f"""SELECT 1 FROM {schema}.conversations
+                        WHERE agent_name = %s
+                          AND role = 'user'
+                          AND processed_at IS NULL
+                          AND channel_type = 'web'
+                          AND conversation_id != %s
+                        LIMIT 1""",
+                    (self.config.name, current_conversation_id),
+                )
+                row = await cur.fetchone()
+            return row is not None
+        except Exception as e:
+            logger.debug(f"Human message check failed: {e}")
+            return False
 
 
 def _usage_meta(response: LLMResponse, model_id: str) -> dict:

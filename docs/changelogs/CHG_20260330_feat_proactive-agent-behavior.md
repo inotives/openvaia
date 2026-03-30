@@ -39,3 +39,12 @@ Branch started: 2026-03-30
 - New helper methods: `_check_idle_behavior()`, `_get_agent_config()`, `_get_today_autonomous_count()`, `_is_idle_for()`
 - All configurable via `agent_configs` table — no redeploy needed
 - Verified: agent triggers autonomous work after 5 min idle, follows idle_behavior skill protocol, creates autonomous tasks, fetches market data
+
+### Phase 3.5: Human Message Priority (Interrupt Pattern)
+- Modified `loop.py` to check for pending human messages between tool iterations during autonomous tasks
+- Autonomous conversations identified by `conversation_id` starting with `heartbeat-idle-`
+- Two interrupt signals checked:
+  - Web chat: unprocessed messages in DB (`processed_at IS NULL`)
+  - Discord/Slack/Telegram: requests queued at semaphore (`_semaphore._waiters`)
+- On interrupt: saves pause note to conversation, returns early, releases semaphore for human request
+- Only autonomous tasks are interruptible — human-initiated tasks are never interrupted
