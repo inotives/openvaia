@@ -110,7 +110,11 @@ class Heartbeat:
         # 4. Reset recurring tasks that are due
         await self._reset_recurring_tasks()
 
-        # 5. Daily data pruning
+        # 5. Proactive idle behavior — if agent has no work, trigger autonomous action
+        if not self.agent_loop.is_busy() and not pending:
+            await self._check_idle_behavior()
+
+        # 6. Daily data pruning
         today = date.today()
         if self._last_prune_date != today:
             await self._prune_old_data()
@@ -287,6 +291,93 @@ class Heartbeat:
         asyncio.create_task(
             self.agent_loop.run(prompt, conversation_id=conversation_id, channel_type="cron")
         )
+
+    # --- Proactive idle behavior ---
+
+    async def _check_idle_behavior(self) -> None:
+        """If agent has been idle and proactive mode is enabled, trigger autonomous action."""
+        # Check if proactive behavior is enabled
+        enabled = await self._get_agent_config("proactive_enabled", "true")
+        if enabled.lower() not in ("true", "1", "yes"):
+            return
+
+        # Check daily budget — limit autonomous LLM calls per day
+        max_daily = int(await self._get_agent_config("proactive_max_daily", "10"))
+        today_count = await self._get_today_autonomous_count()
+        if today_count >= max_daily:
+            logger.debug(f"Proactive: daily budget reached ({today_count}/{max_daily})")
+            return
+
+        # Check idle duration — only trigger after 5+ minutes of idleness
+        idle_minutes = int(await self._get_agent_config("proactive_idle_minutes", "5"))
+        if not await self._is_idle_for(idle_minutes):
+            return
+
+        logger.info(f"Proactive: agent idle for {idle_minutes}+ min, triggering idle behavior ({today_count + 1}/{max_daily})")
+
+        prompt = (
+            "You are currently idle — no pending tasks or messages. "
+            "Follow the idle_behavior skill protocol: check the mission board, "
+            "follow up on stale research, review curated resources, or do proactive monitoring. "
+            "Pick ONE action from the priority list, create a task tagged autonomous:true, "
+            "and execute it. Keep it focused and under 10 minutes."
+        )
+        conversation_id = f"heartbeat-idle-{self.agent_name}-{datetime.now(UTC).strftime('%Y%m%d%H%M')}"
+        asyncio.create_task(
+            self.agent_loop.run(prompt, conversation_id=conversation_id, channel_type="cron")
+        )
+
+    async def _get_agent_config(self, key: str, default: str) -> str:
+        """Read an agent-specific config value from agent_configs."""
+        schema = get_schema()
+        try:
+            async with get_connection() as conn:
+                cur = await conn.execute(
+                    f"SELECT value FROM {schema}.agent_configs WHERE agent_name = %s AND key = %s",
+                    (self.agent_name, key),
+                )
+                row = await cur.fetchone()
+            return row["value"] if row else default
+        except Exception:
+            return default
+
+    async def _get_today_autonomous_count(self) -> int:
+        """Count autonomous conversations started today."""
+        schema = get_schema()
+        try:
+            async with get_connection() as conn:
+                cur = await conn.execute(
+                    f"""SELECT COUNT(DISTINCT conversation_id) AS cnt
+                        FROM {schema}.conversations
+                        WHERE agent_name = %s
+                          AND conversation_id LIKE 'heartbeat-idle-%%'
+                          AND created_at >= date_trunc('day', NOW())""",
+                    (self.agent_name,),
+                )
+                row = await cur.fetchone()
+            return int(row["cnt"]) if row else 0
+        except Exception:
+            return 0
+
+    async def _is_idle_for(self, minutes: int) -> bool:
+        """Check if agent has been idle (no LLM activity) for N+ minutes."""
+        schema = get_schema()
+        try:
+            async with get_connection() as conn:
+                cur = await conn.execute(
+                    f"""SELECT MAX(created_at) AS last_activity
+                        FROM {schema}.conversations
+                        WHERE agent_name = %s
+                          AND role = 'assistant'""",
+                    (self.agent_name,),
+                )
+                row = await cur.fetchone()
+            if not row or not row["last_activity"]:
+                return True  # No activity ever — definitely idle
+            idle_since = (datetime.now(UTC) - row["last_activity"]).total_seconds()
+            return idle_since >= minutes * 60
+        except Exception:
+            return False
 
     # --- Web message fast loop (1s) ---
 
