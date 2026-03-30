@@ -63,29 +63,19 @@ export default function OfficePage() {
 
   const fetchAgentRooms = useCallback(async (agentList: AgentData[]) => {
     const rooms: Record<string, string> = {};
-    // Get busy status from the full agent details
-    let busyMap: Record<string, boolean> = {};
-    try {
-      const res = await fetch("/api/dashboard/agents");
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        data.forEach((a: any) => { busyMap[a.name] = a.details?.is_busy || false; });
-      }
-    } catch {}
-
     await Promise.all(agentList.map(async (a) => {
       try {
-        const [taskRes, chatRes] = await Promise.all([
+        const [taskRes, activityRes] = await Promise.all([
           fetch(`/api/tasks?assigned_to=${a.name}&status=in_progress`),
-          fetch(`/api/agents/${a.name}/chat?session=${a.name}-${new Date().toISOString().slice(0, 10)}`),
+          fetch(`/api/agents/${a.name}/activity`),
         ]);
         const tasks = await taskRes.json();
-        const chatData = await chatRes.json();
-        const messages = chatData.messages || [];
-        const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
-        const recentChat = lastUserMsg?.content || "";
-        const isBusy = busyMap[a.name] || false;
-        rooms[a.name] = activityToRoom(Array.isArray(tasks) ? tasks : [], recentChat, isBusy);
+        const activity = await activityRes.json();
+        rooms[a.name] = activityToRoom(
+          Array.isArray(tasks) ? tasks : [],
+          activity.lastMessage || "",
+          activity.isBusy || false,
+        );
       } catch {
         rooms[a.name] = "f1_resting";
       }
