@@ -124,7 +124,48 @@ SKILL_CREATE_TOOL = {
     },
 }
 
-PLATFORM_TOOLS = [TASK_LIST_TOOL, TASK_UPDATE_TOOL, TASK_CREATE_TOOL, SEND_MESSAGE_TOOL, SKILL_CREATE_TOOL]
+SKILL_PROPOSE_TOOL = {
+    "name": "skill_propose",
+    "description": (
+        "Propose a skill evolution for human review. Use when you identify: "
+        "a broken/outdated skill (type=fix), an opportunity to combine skills (type=derived), "
+        "or a novel reusable pattern (type=captured). All proposals require human approval."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "type": {
+                "type": "string",
+                "enum": ["fix", "derived", "captured"],
+                "description": "fix=repair broken skill, derived=enhance/combine, captured=new pattern",
+            },
+            "skill_name": {
+                "type": "string",
+                "description": "For fix/derived: name of existing skill to evolve. For captured: leave empty.",
+            },
+            "proposed_name": {
+                "type": "string",
+                "description": "For captured: name for the new skill. For fix/derived: leave empty.",
+            },
+            "direction": {
+                "type": "string",
+                "description": "What to change and why — the rationale for this evolution",
+            },
+            "proposed_content": {
+                "type": "string",
+                "description": "Full proposed skill content in markdown",
+            },
+            "proposed_tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Tags for the proposed skill (for captured/derived)",
+            },
+        },
+        "required": ["type", "direction", "proposed_content"],
+    },
+}
+
+PLATFORM_TOOLS = [TASK_LIST_TOOL, TASK_UPDATE_TOOL, TASK_CREATE_TOOL, SEND_MESSAGE_TOOL, SKILL_CREATE_TOOL, SKILL_PROPOSE_TOOL]
 
 _DB_NOT_CONNECTED = "Error: Database not connected. Platform tools require a running Postgres instance."
 
@@ -326,3 +367,53 @@ class PlatformTools:
             )
 
         return f"Draft skill '{name}' created. It will be reviewed by a human before activation."
+
+    async def skill_propose(
+        self,
+        type: str,
+        direction: str,
+        proposed_content: str,
+        skill_name: str | None = None,
+        proposed_name: str | None = None,
+        proposed_tags: list[str] | None = None,
+    ) -> str:
+        """Submit a skill evolution proposal for human review."""
+        if not self.db_available:
+            return _DB_NOT_CONNECTED
+
+        if type not in ("fix", "derived", "captured"):
+            return "Error: type must be 'fix', 'derived', or 'captured'"
+
+        from inotagent.db.pool import get_connection, get_schema
+        schema = get_schema()
+
+        skill_id = None
+        if type in ("fix", "derived") and skill_name:
+            async with get_connection() as conn:
+                cur = await conn.execute(
+                    f"SELECT id FROM {schema}.skills WHERE name = %s", (skill_name,)
+                )
+                row = await cur.fetchone()
+                if not row:
+                    return f"Error: Skill '{skill_name}' not found"
+                skill_id = row["id"]
+
+        if type == "captured" and not proposed_name:
+            return "Error: proposed_name is required for captured proposals"
+
+        async with get_connection() as conn:
+            await conn.execute(
+                f"""INSERT INTO {schema}.skill_evolution_proposals
+                    (skill_id, evolution_type, proposed_by, status, direction,
+                     proposed_content, proposed_name, proposed_description, proposed_tags)
+                    VALUES (%s, %s, %s, 'pending', %s, %s, %s, %s, %s)""",
+                (
+                    skill_id, type, self.agent_name, direction,
+                    proposed_content, proposed_name,
+                    direction[:200] if type == "captured" else None,
+                    proposed_tags or [],
+                ),
+            )
+
+        label = f"'{skill_name}'" if skill_name else f"new skill '{proposed_name}'"
+        return f"Evolution proposal ({type}) for {label} submitted. Awaiting human review."

@@ -14,7 +14,7 @@ Dockerized multi-agent AI platform powered by **inotagent** — a custom async P
 ## Design Philosophy
 
 - **Runtime-pluggable**: inotagent is the default runtime, but agents (`agents/`) and runtime (`inotagent/`) are deliberately separated. Agents are consumers of the runtime, not part of it. Identity files (AGENTS.md, TOOLS.md, .env) are runtime-agnostic.
-- **DB-driven skills**: 81 skill files in `inotagent/skills/` (3 global + 78 non-global). Imported via `make import-skills`. Stored in Postgres, injected into system prompt at startup and refreshed every heartbeat (60s). Skills can be edited via Admin UI without redeploy.
+- **DB-driven skills**: 98 skill files in `inotagent/skills/` (4 global + 94 non-global). Imported via `make import-skills`. Stored in Postgres, injected into system prompt at startup and refreshed every heartbeat (60s). Skills can be edited via Admin UI without redeploy.
 - **Skill file naming**: `0__<name>.md` = global (all agents), `1__<name>.md` = non-global (equip via UI). Token count shown in each file.
 - **Hybrid memory search**: Postgres FTS (30%) + pgvector embeddings (70%). Falls back to FTS-only when embeddings unavailable.
 - **Recurring tasks**: Replace cron — `schedule:daily@00:00`, `schedule:hourly`, `schedule:monthly@00:00` tags on tasks. Heartbeat resets completed tasks automatically.
@@ -26,7 +26,7 @@ Dockerized multi-agent AI platform powered by **inotagent** — a custom async P
 - **Base image**: `python:3.12-slim` + git, gh, dbmate, uv
 - **Package manager**: uv (pyproject.toml + uv.lock)
 - **Database**: Postgres with pgvector (`pgvector/pgvector:pg16`)
-- **Migrations**: dbmate (5 consolidated migrations in `infra/postgres/migrations/`)
+- **Migrations**: dbmate (6 migrations in `infra/postgres/migrations/`)
 - **Coding tools**: Native tools (read_file, write_file, shell)
 - **Channels**: Discord (discord.py), Slack (slack-bolt), Telegram (python-telegram-bot)
 - **Embedding**: Configurable in `platform.yml` (default: NVIDIA NIM `llama-nemotron-embed-1b-v2`, 1024d)
@@ -40,7 +40,7 @@ Dockerized multi-agent AI platform powered by **inotagent** — a custom async P
 inotagent/        - Custom agent runtime (async Python)
   src/inotagent/    - Source code
     llm/            - Multi-provider LLM client + embedding client + prompt gen
-    tools/          - Tool registry + handlers (20 tools)
+    tools/          - Tool registry + handlers (21 tools)
       shell.py, files.py, browser.py     - Core tools
       discord_tool.py                     - Proactive Discord messaging
       platform.py                         - Tasks + messaging + skill_create
@@ -49,7 +49,7 @@ inotagent/        - Custom agent runtime (async Python)
       resources.py                        - Curated resource search/add
       email.py                            - Gmail SMTP send
       delegate.py                         - Sub-agent delegation
-      setup.py                            - Wire all 20 tools into registry
+      setup.py                            - Wire all 21 tools into registry
     channels/       - Channel system (Discord, Slack, Telegram)
     db/             - Async Postgres (psycopg3 pool, conversations, memories, research, skills, resources, agent_configs)
     scheduler/      - Heartbeat (with recurring task reset + mission board)
@@ -57,7 +57,7 @@ inotagent/        - Custom agent runtime (async Python)
     loop.py         - Core agent reasoning loop (prompt → LLM → tools → response)
     main.py         - Entry point (single-agent, multi-agent, CLI, one-shot)
     bootstrap.py    - One-time setup (register, spaces, repos, announce)
-  skills/           - 81 skill files (3 global + 78 non-global, imported via make import-skills)
+  skills/           - 98 skill files (4 global + 94 non-global, imported via make import-skills)
   tests/            - Unit tests (350 tests)
   Dockerfile        - Base image definition
   entrypoint.sh     - Container boot sequence (single + multi-agent)
@@ -65,7 +65,7 @@ inotagent/        - Custom agent runtime (async Python)
   platform.yml      - Platform defaults (model, channels, embedding, prompt_gen)
 Dockerfile.agents   - Multi-agent image (copies all agent dirs)
 agents/             - Individual agent definitions (AGENTS.md, TOOLS.md, agent.yml)
-infra/              - Postgres migrations (5 consolidated files)
+infra/              - Postgres migrations (6 migration files)
 scripts/            - Utility scripts (task.sh, repo.sh, import-skills.py, create-agent.sh)
 docs/               - Project documentation + enhancement plans + changelogs
 tests/              - Project integrity tests
@@ -125,8 +125,8 @@ make logs
 You should see:
 ```
 Multi-agent mode: ino,robin
-Agent 'ino' initialized with model 'nvidia-minimax-2.5' (20 tools, db=yes)
-Agent 'robin' initialized with model 'nvidia-minimax-2.5' (20 tools, db=yes)
+Agent 'ino' initialized with model 'nvidia-minimax-2.5' (21 tools, db=yes)
+Agent 'robin' initialized with model 'nvidia-minimax-2.5' (21 tools, db=yes)
 Starting 2 agent(s): ['ino', 'robin']
 Discord connected: ino#0021
 Discord connected: robin-xai#0956
@@ -138,11 +138,11 @@ Defined in `inotagent/entrypoint.sh`:
 
 1. **Git credentials** — configure `GITHUB_TOKEN_PATS` for `git push`, set `user.name` + `user.email`
 2. **Ensure database** — create `POSTGRES_DB` if not exists
-3. **Run migrations** — `dbmate` applies 5 consolidated migrations with schema substitution
+3. **Run migrations** — `dbmate` applies 6 migrations with schema substitution
 4. **Bootstrap** — for each agent in `AGENTS`: register in `platform.agents`, seed `agent_configs`, create spaces, add members, announce boot, sync repos
 5. **Start inotagent** — multi-agent: `--agents ino,robin`, single: `--agent-dir /app/agents/robin`
    - Init shared infrastructure (DB pool, embedding client)
-   - Per agent: load config, load skills, create tool registry (20 tools), start heartbeat, setup channels
+   - Per agent: load config, load skills, create tool registry (21 tools), start heartbeat, setup channels
    - Start all agents concurrently via `asyncio.gather`
 
 ## Conventions

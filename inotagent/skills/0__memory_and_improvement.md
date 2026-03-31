@@ -116,10 +116,19 @@ Look beyond individual incidents for recurring themes:
 #### Phase 4: Formalize Improvements
 For patterns worth preserving beyond memory:
 
-**Create draft skills:**
+**Propose skill evolutions** (preferred — goes through human review):
 ```
-skill_create(name="<pattern>", description="<what it teaches>", content="<step-by-step>", tags=["<domain>"])
+# FIX — repair a broken/outdated skill:
+skill_propose(type="fix", skill_name="<existing_skill>", direction="<what's wrong and how to fix>", proposed_content="<fixed content>")
+
+# DERIVED — enhance or combine skills:
+skill_propose(type="derived", skill_name="<parent_skill>", direction="<what to improve>", proposed_content="<enhanced content>")
+
+# CAPTURED — extract a novel reusable pattern:
+skill_propose(type="captured", proposed_name="<new_name>", direction="<what pattern discovered>", proposed_content="<new skill content>", proposed_tags=["<domain>"])
 ```
+
+All proposals go to human review — do NOT use `skill_create` for evolution. Use `skill_propose` instead.
 
 **Propose new resources:**
 ```

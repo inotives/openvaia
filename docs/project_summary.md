@@ -113,7 +113,7 @@ openvaia/
 │   │   ├── loop.py                 # Core agent reasoning loop
 │   │   ├── bootstrap.py            # One-time setup (register, spaces, repos, announce)
 │   │   ├── llm/                    # Multi-provider LLM client
-│   │   ├── tools/                  # Tool registry + handlers (20 tools)
+│   │   ├── tools/                  # Tool registry + handlers (21 tools)
 │   │   ├── channels/               # Discord, Slack, Telegram
 │   │   ├── db/                     # Async Postgres (conversations, memory, research, skills, agent_configs)
 │   │   ├── scheduler/              # Heartbeat with recurring task scheduling
@@ -159,7 +159,7 @@ openvaia/
 
 ---
 
-## Tool System (20 tools)
+## Tool System (21 tools)
 
 | Tool | Description |
 |---|---|
@@ -252,15 +252,15 @@ Defined in `inotagent/entrypoint.sh`. Supports multi-agent mode where bootstrap 
 2. **Ensure database** — create `POSTGRES_DB` if not exists (via `psycopg`)
 3. **Run migrations** — `dbmate` applies SQL from `infra/postgres/migrations/` with schema substitution
 4. **Bootstrap (per agent)** — `python3 -m inotagent.bootstrap`: register agent, seed agent_configs from agent.yml, create spaces, add members, clone/pull repos, announce boot
-5. **Start inotagent** — `exec python3 -m inotagent --agents ino,robin`: init DB pool, load per-agent config and env, load skills, count system prompt tokens, create tool registry (20 tools), start heartbeat with recurring task scheduling, connect channels (Discord/Slack/Telegram)
+5. **Start inotagent** — `exec python3 -m inotagent --agents ino,robin`: init DB pool, load per-agent config and env, load skills, count system prompt tokens, create tool registry (21 tools), start heartbeat with recurring task scheduling, connect channels (Discord/Slack/Telegram)
 
 ---
 
-## What's Done (ES-0001 through ES-0008)
+## What's Done (ES-0001 through ES-0010)
 
 - [x] Custom async Python runtime (inotagent)
 - [x] Multi-provider LLM client (Anthropic, OpenAI-compatible)
-- [x] 20-tool system (shell, files, browser, Discord, tasks, messaging, memory, research, resources, email, delegation, skill creation)
+- [x] 21-tool system (shell, files, browser, Discord, tasks, messaging, memory, research, resources, email, delegation, skill creation, skill_propose)
 - [x] Multi-channel: Discord (discord.py), Slack (slack-bolt), Telegram (python-telegram-bot)
 - [x] Async Postgres persistence (conversations, memory with hybrid FTS + embedding search, research reports, resources)
 - [x] Heartbeat with recurring task scheduling (health, task/mission/message detection, delegated review, skill refresh)
@@ -271,7 +271,7 @@ Defined in `inotagent/entrypoint.sh`. Supports multi-agent mode where bootstrap 
 - [x] Agent-to-agent messaging (Postgres spaces)
 - [x] Sub-agent delegation via `delegate` tool
 - [x] Git repo management via `agent_repos` table
-- [x] DB-driven skills system (81 skill files: 3 global + 78 non-global, imported via `make import-skills`)
+- [x] DB-driven skills system (98 skill files: 4 global + 94 non-global, imported via `make import-skills`)
 - [x] Runtime-configurable agent settings via `agent_configs` table (model, fallbacks, mission_tags, parallel)
 - [x] Next.js + Ant Design admin dashboard (Dashboard, Tasks, Agents, Skills, Resources, Prompt Gen, Config, Gamified Office)
 - [x] Agent detail page (Overview, Chat, Skills, Repos, Tasks, Research, Memory, Memory Graph, Settings)
@@ -305,7 +305,25 @@ Defined in `inotagent/entrypoint.sh`. Supports multi-agent mode where bootstrap 
 - [x] Pixel art assets from [Pixel Spaces](https://netherzapdos.itch.io/pixel-spaces) + custom PIXI.Graphics objects
 - [x] LED dot-matrix floor indicators, rooftop company sign, city skyline background
 
+### ES-0009 — Proactive Agent Behavior (v1.4)
+- [x] 8 recurring tasks for ino (market brief, alerts, resources) and robin (health check, ops log, retro, mission board)
+- [x] Global `idle_behavior` skill — agents autonomously work when idle (mission board → stale research → resources → monitoring)
+- [x] Heartbeat idle detection with configurable guardrails (proactive_enabled, proactive_max_daily, proactive_idle_minutes)
+- [x] Human message priority interrupt — autonomous tasks pause between tool iterations for incoming human messages
+- [x] Anti-repetition rules — agents check recent tasks before acting, no same work within 3 hours
+- [x] Seed script for recurring tasks (`make seed-tasks`, hooked into `make clean-slate`)
+
+### ES-0010 — Self-Evolving Skills (v1.4)
+- [x] Skill quality metrics tracking — per-agent, per-skill: times_selected, times_applied, times_completed, times_fallback
+- [x] Skill version history with lineage — origin (imported/fixed/derived/captured), generation, parent tracking
+- [x] `skill_propose` tool (#21) — agents submit evolution proposals (FIX, DERIVED, CAPTURED)
+- [x] Evolution proposals API — list, get, approve/reject with auto-apply (creates version + updates skill)
+- [x] Updated daily review skill to use `skill_propose` instead of `skill_create`
+- [x] DB migration 006: `skill_metrics`, `skill_versions`, `skill_evolution_proposals` tables
+- [x] Phase 4-6 deferred pending observation (skill evolver agent, metric triggers, admin UI dashboard)
+
 ## What's Next (DRAFTs)
 
 - [ ] Production deployment (internet-facing hosting)
 - [ ] Parallel execution (concurrent tool calls)
+- [ ] Robin trading toolkit — agent-first CLI tools for autonomous crypto trading (ES-0012)

@@ -49,6 +49,7 @@ def create_tool_registry(
     registry.register("task_create", platform.task_create, PLATFORM_TOOLS[2])
     registry.register("send_message", platform.send_message, PLATFORM_TOOLS[3])
     registry.register("skill_create", platform.skill_create, PLATFORM_TOOLS[4])
+    registry.register("skill_propose", platform.skill_propose, PLATFORM_TOOLS[5])
 
     # Resource tools (DB-backed when available)
     from inotagent.tools.resources import RESOURCE_TOOLS, ResourceTools
