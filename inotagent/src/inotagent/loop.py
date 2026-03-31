@@ -252,7 +252,36 @@ class AgentLoop:
                 metadata=_usage_meta(response, self.config.model_id),
             )
 
+        # Update skill metrics — track usage
+        if self.db_available and self.config._skill_ids:
+            await self._update_skill_metrics(iterations > 0)
+
         return response.content
+
+    async def _update_skill_metrics(self, had_tool_calls: bool) -> None:
+        """Update skill quality metrics after a conversation completes."""
+        try:
+            from inotagent.db.pool import get_connection, get_schema
+            schema = get_schema()
+            skill_ids = self.config._skill_ids
+            agent_name = self.config.name
+
+            async with get_connection() as conn:
+                for skill_id in skill_ids:
+                    # Upsert: increment times_selected, times_completed
+                    await conn.execute(
+                        f"""INSERT INTO {schema}.skill_metrics
+                                (skill_id, agent_name, times_selected, times_completed, last_applied_at)
+                            VALUES (%s, %s, 1, %s, NOW())
+                            ON CONFLICT (skill_id, agent_name) DO UPDATE SET
+                                times_selected = {schema}.skill_metrics.times_selected + 1,
+                                times_completed = {schema}.skill_metrics.times_completed + %s,
+                                last_applied_at = NOW(),
+                                updated_at = NOW()""",
+                        (skill_id, agent_name, 1 if had_tool_calls else 0, 1 if had_tool_calls else 0),
+                    )
+        except Exception as e:
+            logger.debug(f"Skill metrics update failed: {e}")
 
     async def _check_pending_human_messages(self, current_conversation_id: str) -> bool:
         """Check if there are unprocessed human messages waiting (any channel)."""

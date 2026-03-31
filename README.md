@@ -147,9 +147,10 @@ Full setup guide: [Project Details](docs/project_details.md)
 ## Highlights
 
 - **Multi-agent container** — multiple agents share one container (DB pool, browser, embedding client). Or run 1:1 — same image, just change the `AGENTS` env var.
-- **20-tool system** — shell, files, browser, Discord, tasks, messaging, memory, research, skills, resources, email, and delegate (sub-agents).
+- **21-tool system** — shell, files, browser, Discord, tasks, messaging, memory, research, skills, skill_propose, resources, email, and delegate (sub-agents).
 - **Sub-agents** — `delegate` tool spawns ephemeral specialist LLM calls using skills as system prompts. Code review, security scan, QA — one call, no overhead.
-- **81 skills library** — 3 global + 78 non-global, extracted from community templates and platform workflows. Import via `make import-skills`.
+- **98 skills library** — 4 global + 94 non-global, extracted from community templates, superpowers, gstack, and platform workflows. Import via `make import-skills`.
+- **Self-evolving skills** — agents propose skill improvements (FIX/DERIVED/CAPTURED) via `skill_propose` tool. Human reviews and approves. Full version history with lineage tracking.
 - **Multi-channel inbox** — Discord (discord.py), Slack (Socket Mode), Telegram (with allowFrom security).
 - **Hybrid memory search** — Postgres FTS (30%) + pgvector semantic embedding (70%) — finds relevant memories even without keyword overlap.
 - **Recurring tasks** — `schedule:daily@00:00`, `schedule:hourly`, `schedule:monthly` tags on tasks. Heartbeat resets completed tasks automatically.

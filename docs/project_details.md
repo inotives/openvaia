@@ -97,7 +97,7 @@ Running bootstrap...
 Agent 'ino' registered
 Bootstrap complete for 'ino'
 Starting inotagent for ino...
-Agent 'ino' initialized with model 'nvidia-minimax-2.5' (20 tools, db=yes)
+Agent 'ino' initialized with model 'nvidia-minimax-2.5' (21 tools, db=yes)
 Heartbeat started for ino
 Discord connected: ino#0021
 ```
@@ -127,7 +127,7 @@ Supports multi-agent mode where bootstrap runs per agent, then inotagent starts 
                            • Load skills from DB (skills + agent_skills tables)
                            • Build system prompt (AGENTS.md + TOOLS.md + skills + model info)
                            • Count system prompt tokens (stored in agent_configs)
-                           • Create tool registry (20 tools)
+                           • Create tool registry (21 tools)
                            • Start heartbeat with recurring task scheduling (60s health + task/message/mission detection)
                            • Connect channels (Discord, Slack, Telegram as configured)
                            • Enter channel mode (await messages)
@@ -171,7 +171,7 @@ openvaia/
 │       │   ├── platform.py        # Tasks + messaging (Postgres-backed)
 │       │   ├── memory.py          # Memory store/search (hybrid FTS + pgvector embedding)
 │       │   ├── research.py        # Research report store/search/get
-│       │   └── setup.py           # Wire all 20 tools into registry
+│       │   └── setup.py           # Wire all 21 tools into registry
 │       ├── channels/              # Communication channels
 │       │   ├── discord.py         # Discord bot (discord.py)
 │       │   ├── slack.py           # Slack bot (slack-bolt, Socket Mode)
@@ -586,7 +586,7 @@ Update `AGENTS.md` for agents that need to know about the new team member:
 ### v1 (Current — inotagent)
 - [x] Custom async Python runtime
 - [x] Multi-provider LLM client (Anthropic + OpenAI-compat)
-- [x] Tool system (20 tools: shell, files, browser, discord_send, tasks, messaging, memory, research)
+- [x] Tool system (21 tools: shell, files, browser, discord_send, tasks, messaging, memory, research)
 - [x] Async Postgres persistence (conversations, memory with hybrid FTS + embedding search, research reports)
 - [x] Context window management (sliding window truncation)
 - [x] Heartbeat with recurring task scheduling + mission board
@@ -631,6 +631,17 @@ Update `AGENTS.md` for agents that need to know about the new team member:
 - [x] Pixel art sprites from Pixel Spaces + custom PIXI.Graphics drawn objects
 - [x] Modular architecture: BuildingScene, Floor1/2, ElevatorZone, pixelObjects/
 
+### v1.4 — Proactive Agents + Self-Evolving Skills
+- [x] Proactive agent behavior — recurring tasks, idle behavior skill, heartbeat idle detection (ES-0009)
+- [x] Human message priority interrupt — autonomous tasks pause for human messages
+- [x] Seed script for recurring tasks (`make seed-tasks`)
+- [x] Self-evolving skills — `skill_propose` tool (FIX/DERIVED/CAPTURED), human approval flow (ES-0010)
+- [x] Skill quality metrics tracking (per-agent, per-skill: selected, applied, completed, fallback)
+- [x] Skill version history with lineage (origin, generation, parent tracking)
+- [x] Skill evolution proposals API (list, get, approve/reject with auto-apply)
+- [x] 98 skills (4 global + 94 non-global) from 4 sources (community, superpowers, gstack, platform)
+
 ### v2 (DRAFTs)
 - [ ] Production deployment (internet-facing hosting)
 - [ ] Parallel execution (concurrent tool calls)
+- [ ] Robin trading toolkit — agent-first CLI tools for autonomous crypto trading (ES-0012)
