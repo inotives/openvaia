@@ -1,6 +1,6 @@
 # ES-0009 — Proactive Agent Behavior
 
-## Status: PENDING
+## Status: COMPLETE (Phase 1–3.5), Phase 4–5 deferred
 
 ## Problem / Pain Points
 
@@ -21,16 +21,24 @@ Make agents proactive in a **controlled, observable** way. Agents should autonom
 Use the existing `schedule:` tag system to create recurring tasks per agent:
 
 **ino (Global Financial Researcher):**
-- `schedule:daily@09:00` — Morning market brief (crypto, gold, macro)
-- `schedule:daily@17:00` — End-of-day summary report
-- `schedule:hourly` — Monitor top assets for >5% price movements, alert via Discord if detected
-- `schedule:daily@12:00` — Check curated resources for new research material
+
+| Key | Title | Schedule | Description |
+|-----|-------|----------|-------------|
+| `INO-001` | Morning Market Brief | `schedule:daily@09:00` | Compile overnight market movements: BTC, ETH, gold, S&P 500. Key price levels, notable news, sentiment indicators. Post as research report. |
+| `INO-002` | End of Day Market Summary | `schedule:daily@17:00` | Summarize the day's market activity: price changes, volume, notable events. Compare with morning brief. Post as research report. |
+| `INO-003` | Price Alert Monitor | `schedule:hourly` | Check top 5 crypto assets (BTC, ETH, SOL, PAXG, XAU) for >5% price movements in the last hour. Post alert with analysis to Discord if detected. |
+| `INO-004` | Resource Discovery | `schedule:daily@12:00` | Check curated resources for new research material. Search for recent reports, data sources, or tools relevant to crypto and macro research. |
 
 **robin (Trading Operations Engineer):**
-- `schedule:daily@09:30` — System health check (DB, containers, API endpoints)
-- `schedule:daily@18:00` — Daily operations log (what ran, what failed)
-- `schedule:weekly@MON:10:00` — Weekly engineering retro (using `engineering_retro` skill)
-- `schedule:daily@08:00` — Review pending tasks on mission board, self-assign if relevant
+
+| Key | Title | Schedule | Description |
+|-----|-------|----------|-------------|
+| `ROB-001` | System Health Check | `schedule:daily@09:30` | Verify DB connections, check container status, review recent error logs, check disk usage. Report anomalies. |
+| `ROB-002` | Daily Operations Log | `schedule:daily@18:00` | Review what ran today: heartbeat cycles, tasks processed, messages handled, any errors or timeouts. Write brief ops log. |
+| `ROB-003` | Weekly Engineering Retro | `schedule:weekly@MON:10:00` | Run weekly retrospective: analyze git commits, work sessions, shipping streaks, test coverage trends. Use `engineering_retro` skill. |
+| `ROB-004` | Review Mission Board | `schedule:daily@08:00` | Check mission board for unclaimed backlog tasks. If any match skills (coding, infrastructure, operations), self-assign and start working. |
+
+All tasks created with `status: done` — heartbeat resets them at their scheduled times.
 
 ### Phase 2: Idle Behavior Skill (global skill)
 
@@ -159,21 +167,20 @@ async def check_pending_human_messages(agent) -> bool:
 
 ## Implementation Steps
 
-- [ ] Phase 1: Create recurring tasks for ino and robin (no code changes)
-- [ ] Phase 1: Verify recurring tasks execute on schedule
-- [ ] Phase 2: Create `0__idle_behavior.md` global skill
-- [ ] Phase 2: Test idle behavior activates correctly
-- [ ] Phase 3: Add idle detection to heartbeat scheduler
-- [ ] Phase 3: Add `proactive_enabled` config toggle
-- [ ] Phase 3: Add daily autonomous call budget
-- [ ] Phase 3.5: Add `current_task_is_autonomous` flag to agent state
-- [ ] Phase 3.5: Add `check_pending_human_messages()` to db module
-- [ ] Phase 3.5: Add inter-iteration message check in `loop.py`
-- [ ] Phase 3.5: Add `pause_current_task()` — saves blocked task with context
-- [ ] Phase 3.5: Test: send Discord message while agent runs autonomous task → agent pauses and responds
-- [ ] Phase 4: Test inter-agent task creation
-- [ ] Phase 5: Add proactive Discord notifications
-- [ ] Phase 5: Add notification batching/scheduling
+- [x] Phase 1: Create recurring tasks for ino and robin (no code changes)
+- [x] Phase 1: Verify recurring tasks execute on schedule
+- [x] Phase 2: Create `0__idle_behavior.md` global skill
+- [x] Phase 2: Test idle behavior activates correctly
+- [x] Phase 3: Add idle detection to heartbeat scheduler
+- [x] Phase 3: Add `proactive_enabled` config toggle
+- [x] Phase 3: Add daily autonomous call budget
+- [x] Phase 3.5: Detect autonomous conversations via `heartbeat-idle-` prefix
+- [x] Phase 3.5: Add `_check_pending_human_messages()` to loop.py
+- [x] Phase 3.5: Add inter-iteration message check + semaphore waiter check
+- [x] Phase 3.5: Save pause note and return early on interrupt
+- [ ] Phase 4: Inter-agent task creation (deferred)
+- [ ] Phase 5: Proactive Discord notifications (deferred)
+- [ ] Phase 5: Notification batching/scheduling (deferred)
 
 ## Guardrails & Safety
 

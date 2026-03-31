@@ -254,6 +254,7 @@ make shell AGENT=ino         - Shell into container
 make import-skills           - Import skills from inotagent/skills/ (skip existing)
 make reset-skill NAME=x      - Reset one skill to file version
 make reimport-skills         - Force re-import all skills
+make seed-tasks              - Seed recurring tasks for proactive agent behavior
 
 # Admin UI
 make ui                      - Build + start Docker UI (port 7860)
