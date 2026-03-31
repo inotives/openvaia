@@ -48,3 +48,16 @@ Branch started: 2026-03-30
   - Discord/Slack/Telegram: requests queued at semaphore (`_semaphore._waiters`)
 - On interrupt: saves pause note to conversation, returns early, releases semaphore for human request
 - Only autonomous tasks are interruptible — human-initiated tasks are never interrupted
+
+### Tuning (post-10h observation)
+- Fixed recurring tasks: set `schedule_at` (UTC) and `recurrence_minutes` for all 8 tasks
+- Reduced daily autonomous budget: 10 → 6 per agent
+- Increased idle trigger interval: 5 min → 15 min
+- Added anti-repetition rules to idle_behavior skill (check recent tasks, no same work within 3h)
+- Added self-assignment requirement (no more unassigned autonomous tasks)
+- Updated idle prompt to enforce diversity and skip cycles when nothing new
+
+### Infrastructure
+- Created `scripts/seed-recurring-tasks.py` — seeds recurring tasks on fresh deploy
+- Added `make seed-tasks` command
+- Hooked into `make clean-slate` (runs after `import-skills`)

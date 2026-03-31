@@ -302,14 +302,14 @@ class Heartbeat:
             return
 
         # Check daily budget — limit autonomous LLM calls per day
-        max_daily = int(await self._get_agent_config("proactive_max_daily", "10"))
+        max_daily = int(await self._get_agent_config("proactive_max_daily", "6"))
         today_count = await self._get_today_autonomous_count()
         if today_count >= max_daily:
             logger.debug(f"Proactive: daily budget reached ({today_count}/{max_daily})")
             return
 
-        # Check idle duration — only trigger after 5+ minutes of idleness
-        idle_minutes = int(await self._get_agent_config("proactive_idle_minutes", "5"))
+        # Check idle duration — only trigger after 15+ minutes of idleness
+        idle_minutes = int(await self._get_agent_config("proactive_idle_minutes", "15"))
         if not await self._is_idle_for(idle_minutes):
             return
 
@@ -317,10 +317,13 @@ class Heartbeat:
 
         prompt = (
             "You are currently idle — no pending tasks or messages. "
-            "Follow the idle_behavior skill protocol: check the mission board, "
-            "follow up on stale research, review curated resources, or do proactive monitoring. "
-            "Pick ONE action from the priority list, create a task tagged autonomous:true, "
-            "and execute it. Keep it focused and under 10 minutes."
+            "Follow the idle_behavior skill protocol. IMPORTANT: "
+            "First check your recent tasks (task_list) to see what you did recently. "
+            "Do NOT repeat the same type of work within 3 hours. "
+            "Pick ONE action that is DIFFERENT from your recent work, "
+            "create a task tagged autonomous:true assigned to yourself, "
+            "and execute it. Keep it focused and under 10 minutes. "
+            "If you have nothing new to do, skip this cycle entirely."
         )
         conversation_id = f"heartbeat-idle-{self.agent_name}-{datetime.now(UTC).strftime('%Y%m%d%H%M')}"
         asyncio.create_task(
