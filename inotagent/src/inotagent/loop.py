@@ -82,6 +82,10 @@ class AgentLoop:
         today = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
         system = self.config.system_prompt_with_skills + f"\n\n## Current Time\n- {today}"
 
+        # Snapshot skills at conversation start — won't be affected by heartbeat refresh
+        _active_skill_names = list(self.config._skill_names)
+        _active_skill_ids = list(self.config._skill_ids)
+
         # Load history from DB if conversation_id is provided
         if conversation_id and self.db_available:
             from inotagent.db.conversations import load_history, save_message
@@ -195,7 +199,7 @@ class AgentLoop:
                     content=response.content,
                     channel_type=channel_type,
                     tool_calls=response.tool_calls,
-                    metadata=_usage_meta(response, self.config.model_id, self.config._skill_names),
+                    metadata=_usage_meta(response, self.config.model_id, _active_skill_names),
                 )
 
             # Execute each tool call and collect results
@@ -249,21 +253,21 @@ class AgentLoop:
                 role="assistant",
                 content=response.content,
                 channel_type=channel_type,
-                metadata=_usage_meta(response, self.config.model_id, self.config._skill_names),
+                metadata=_usage_meta(response, self.config.model_id, _active_skill_names),
             )
 
-        # Update skill metrics — track usage
-        if self.db_available and self.config._skill_ids:
-            await self._update_skill_metrics(iterations > 0)
+        # Update skill metrics — track usage (use snapshot, not current config)
+        if self.db_available and _active_skill_ids:
+            await self._update_skill_metrics(iterations > 0, _active_skill_ids)
 
         return response.content
 
-    async def _update_skill_metrics(self, had_tool_calls: bool) -> None:
+    async def _update_skill_metrics(self, had_tool_calls: bool, skill_ids: list[int] | None = None) -> None:
         """Update skill quality metrics after a conversation completes."""
         try:
             from inotagent.db.pool import get_connection, get_schema
             schema = get_schema()
-            skill_ids = self.config._skill_ids
+            skill_ids = skill_ids or self.config._skill_ids
             agent_name = self.config.name
 
             async with get_connection() as conn:
