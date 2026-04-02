@@ -147,7 +147,7 @@ class Heartbeat:
         schema = get_schema()
         async with get_connection() as conn:
             cur = await conn.execute(
-                f"""SELECT key, title, priority, created_by
+                f"""SELECT key, title, priority, created_by, tags
                     FROM {schema}.tasks
                     WHERE assigned_to = %s AND status = 'todo'
                     ORDER BY
@@ -198,12 +198,26 @@ class Heartbeat:
         )
 
     async def _trigger_task_pickup(self, tasks: list[dict]) -> None:
-        """If agent is idle, trigger task pickup via agent loop."""
+        """If agent is idle, trigger task pickup via agent loop with dynamic skill loading."""
         if self.agent_loop.is_busy():
             logger.debug("Heartbeat: agent busy, skipping task pickup")
             return
 
         top = tasks[0]
+        task_tags = top.get("tags") or []
+
+        # Dynamic skill loading — match task to chain and load phase skills
+        try:
+            skill_ids, skill_names, skill_content = await self.agent_loop.config.get_skills_for_task(
+                task_tags=task_tags, task_title=top["title"]
+            )
+            # Temporarily override skills for this task conversation
+            self.agent_loop.config._skill_ids = skill_ids
+            self.agent_loop.config._skill_names = skill_names
+            self.agent_loop.config._skill_content = skill_content
+        except Exception as e:
+            logger.warning(f"Dynamic skill loading failed, using static: {e}")
+
         prompt = (
             f"You have a pending task: {top['key']} [{top['priority']}] \"{top['title']}\" "
             f"(assigned by {top['created_by']}). "

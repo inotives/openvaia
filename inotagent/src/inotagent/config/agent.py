@@ -99,7 +99,7 @@ class AgentConfig:
             logger.info(f"DB configs loaded for '{self.name}', no changes from YAML")
 
     async def refresh_skills(self) -> None:
-        """Reload skills from DB and update cached content."""
+        """Reload static skills from DB (global + equipped). Used as baseline."""
         from inotagent.db.skills import load_agent_skills
         skills = await load_agent_skills(self.name)
         self._skill_ids = [s["id"] for s in skills]
@@ -108,6 +108,57 @@ class AgentConfig:
             self._skill_content = "\n\n".join(s["content"] for s in skills)
         else:
             self._skill_content = ""
+
+    async def get_skills_for_task(self, task_tags: list[str], task_title: str = "") -> tuple[list[int], list[str], str]:
+        """Get dynamic skills for a task: static base + chain phase skills.
+
+        Returns (skill_ids, skill_names, skill_content) — combined static + chain skills.
+        If no chain matches, returns current static skills unchanged.
+        """
+        from inotagent.db.skill_chains import match_chain, get_chain_step_skills, load_skills_by_names
+
+        # Try to match a chain
+        chain = await match_chain(task_tags, task_title)
+        if not chain:
+            # No chain — use static skills
+            return self._skill_ids, self._skill_names, self._skill_content
+
+        # Get skills for current phase (step 0 for new tasks)
+        phase_skill_names = await get_chain_step_skills(chain, step_index=0)
+        phase_skills = await load_skills_by_names(phase_skill_names)
+
+        if not phase_skills:
+            return self._skill_ids, self._skill_names, self._skill_content
+
+        # Merge: static (global + equipped) + chain phase skills (deduplicated)
+        static_names = set(self._skill_names)
+        merged_ids = list(self._skill_ids)
+        merged_names = list(self._skill_names)
+        merged_content_parts = [self._skill_content] if self._skill_content else []
+
+        for s in phase_skills:
+            if s["name"] not in static_names:
+                merged_ids.append(s["id"])
+                merged_names.append(s["name"])
+                merged_content_parts.append(s["content"])
+
+        merged_content = "\n\n".join(merged_content_parts)
+
+        # Enforce token budget (rough estimate: 4 chars ≈ 1 token)
+        max_tokens = 9000
+        estimated_tokens = len(merged_content) // 4
+        if estimated_tokens > max_tokens:
+            # Trim from the end (chain skills) to fit budget
+            while merged_content_parts and len("\n\n".join(merged_content_parts)) // 4 > max_tokens:
+                removed = merged_content_parts.pop()
+                if merged_names and merged_names[-1] not in set(self._skill_names):
+                    merged_ids.pop()
+                    merged_names.pop()
+            merged_content = "\n\n".join(merged_content_parts)
+            logger.info(f"Token budget enforced: trimmed to {len(merged_content) // 4} estimated tokens")
+
+        logger.info(f"Dynamic skills for task: {phase_skill_names} (chain: {chain['name']}, static: {len(self._skill_names)})")
+        return merged_ids, merged_names, merged_content
 
 
 def load_agent_config(
