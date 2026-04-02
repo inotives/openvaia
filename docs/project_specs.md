@@ -104,7 +104,33 @@ Discord connected: ino#0021
 
 ---
 
-## Boot Sequence
+## Local Development (without Docker)
+
+Agents can run natively on the host machine instead of Docker. Same Postgres, same data — just different execution environment.
+
+**Prerequisites:** Python 3.12, uv, dbmate, Postgres running (Docker or local)
+
+```bash
+make db                      # start Postgres (Docker)
+make local-setup             # first time: install deps + migrate + seed
+make local-run AGENT=ino     # run single agent
+make local-run-multi         # run multi-agent (AGENTS=ino,robin)
+make local-stop              # stop local agents
+```
+
+**When to use local instead of Docker:**
+- GPU access needed (ML training, video processing)
+- Native display needed (Godot, headed Chrome, desktop automation)
+- Native app integration (FFmpeg, audio tools)
+- Faster iteration during development (no rebuild)
+
+**Shared state:** Docker and local agents share the same Postgres — conversations, memories, skills, tasks are all shared. Do NOT run the same agent in Docker AND locally simultaneously.
+
+**Hybrid deployment:** Run standard agents (ino, robin) in Docker, special agents (with GPU/display needs) locally — all sharing the same DB.
+
+---
+
+## Boot Sequence (Docker)
 
 Supports multi-agent mode where bootstrap runs per agent, then inotagent starts with `--agents ino,robin` (defined in `inotagent/entrypoint.sh`):
 

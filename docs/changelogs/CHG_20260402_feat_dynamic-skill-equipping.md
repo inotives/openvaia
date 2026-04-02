@@ -63,3 +63,13 @@ Branch started: 2026-04-02
 
 ### Bug Fix
 - Snapshot skills at conversation start in loop.py — dynamic skills now correctly recorded in metadata
+
+### Local Development Support
+- `make local-setup` — install deps + migrate + seed (first time)
+- `make local-run AGENT=ino` — run single agent locally (no Docker)
+- `make local-run-multi` — run multi-agent locally
+- `make local-stop` — stop locally running agents
+- `make local-install` / `make local-migrate` — individual steps
+- Enables native deployment for GPU, display, and native app access (Godot, video editing, ML)
+- Same Postgres DB = same memories, skills, tasks, conversations as Docker agents
+- Note: do NOT run same agent in Docker AND locally simultaneously

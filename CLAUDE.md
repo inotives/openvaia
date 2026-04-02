@@ -170,6 +170,14 @@ make repo-list [AGENT=]
 make repo-add URL=... NAME=... TO=robin BY=ino
 make repo-remove URL=... AGENT=robin
 
+# Local Development (without Docker)
+make local-setup             - First time: install deps + migrate + seed everything
+make local-run AGENT=ino     - Run single agent locally
+make local-run-multi         - Run multi-agent locally (AGENTS=ino,robin)
+make local-stop              - Stop locally running agents
+make local-install           - Install Python deps via uv
+make local-migrate           - Run DB migrations locally
+
 # Testing
 make test                    - Project integrity tests
 make inotagent-test          - 350 unit tests

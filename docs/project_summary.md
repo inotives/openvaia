@@ -26,6 +26,8 @@ Agents are consumers of the runtime, not part of it. Agent identity files carry 
 
 **Self-evolving skills** — Agents propose skill improvements (FIX/DERIVED/CAPTURED) via `skill_propose` tool. Human reviews and approves. Full version history with lineage tracking.
 
+**Deploy anywhere** — Run in Docker (standard) or locally without Docker for GPU, display, and native app access. Same Postgres = same memories, skills, tasks.
+
 ## Communication
 
 - **Agent-to-agent**: Postgres spaces (public, tasks, room, direct)
