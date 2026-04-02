@@ -41,3 +41,16 @@ Branch started: 2026-04-02
 - `clear_gate()` helper removes gate flags from chain_state
 - `_get_task_chain_state()` helper reads chain_state for gate detection
 - Flow: agent completes phase → stores doc → gate triggers → task=review → human approves → task=todo → heartbeat resumes with next phase
+
+### Phase 5: Skill Usage Recording in Metadata
+- `_usage_meta()` now accepts and records `skill_names`, `chain`, `chain_phase`
+- Every assistant response metadata includes which skills were active
+- Enables daily review to see which skills were used per conversation
+- Enables skill_metrics to track effectiveness more accurately
+
+### Phase 6: skill_equip Tool
+- New `skill_equip` tool (#22) — load any skill into current conversation on-demand
+- Use case: mid-task, agent encounters security concern → `skill_equip("security_audit")`
+- Loads skill content into current context (non-persistent, this conversation only)
+- Returns first 500 chars of skill content as confirmation
+- Token budget still applies (skills added to _skill_content)

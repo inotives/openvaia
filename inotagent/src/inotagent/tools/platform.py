@@ -165,7 +165,23 @@ SKILL_PROPOSE_TOOL = {
     },
 }
 
-PLATFORM_TOOLS = [TASK_LIST_TOOL, TASK_UPDATE_TOOL, TASK_CREATE_TOOL, SEND_MESSAGE_TOOL, SKILL_CREATE_TOOL, SKILL_PROPOSE_TOOL]
+SKILL_EQUIP_TOOL = {
+    "name": "skill_equip",
+    "description": (
+        "Load a skill into your current conversation context. Use when you need a skill "
+        "that isn't currently loaded — e.g., you're mid-task and encounter a security concern. "
+        "Only affects this conversation, not persistent."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Skill name to load (e.g. 'security_audit')"},
+        },
+        "required": ["name"],
+    },
+}
+
+PLATFORM_TOOLS = [TASK_LIST_TOOL, TASK_UPDATE_TOOL, TASK_CREATE_TOOL, SEND_MESSAGE_TOOL, SKILL_CREATE_TOOL, SKILL_PROPOSE_TOOL, SKILL_EQUIP_TOOL]
 
 _DB_NOT_CONNECTED = "Error: Database not connected. Platform tools require a running Postgres instance."
 
@@ -417,3 +433,22 @@ class PlatformTools:
 
         label = f"'{skill_name}'" if skill_name else f"new skill '{proposed_name}'"
         return f"Evolution proposal ({type}) for {label} submitted. Awaiting human review."
+
+    async def skill_equip(self, name: str) -> str:
+        """Load a skill into the current conversation context on-demand."""
+        if not self.db_available:
+            return _DB_NOT_CONNECTED
+
+        from inotagent.db.skills import load_skill_by_name
+        skill = await load_skill_by_name(name)
+        if not skill:
+            return f"Error: Skill '{name}' not found or not active."
+
+        # Inject into the agent's current skill set (non-persistent)
+        if hasattr(self, '_agent_config') and self._agent_config:
+            if name not in self._agent_config._skill_names:
+                self._agent_config._skill_ids.append(skill["id"])
+                self._agent_config._skill_names.append(skill["name"])
+                self._agent_config._skill_content += "\n\n" + skill["content"]
+
+        return f"Skill '{name}' loaded into current conversation. Content:\n\n{skill['content'][:500]}..."

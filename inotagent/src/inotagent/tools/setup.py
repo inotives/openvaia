@@ -44,12 +44,14 @@ def create_tool_registry(
 
     # Platform tools (DB-backed when available)
     platform = PlatformTools(agent_name=agent_name, db_available=db_available)
+    platform._agent_config = config  # for skill_equip to inject skills
     registry.register("task_list", platform.task_list, PLATFORM_TOOLS[0])
     registry.register("task_update", platform.task_update, PLATFORM_TOOLS[1])
     registry.register("task_create", platform.task_create, PLATFORM_TOOLS[2])
     registry.register("send_message", platform.send_message, PLATFORM_TOOLS[3])
     registry.register("skill_create", platform.skill_create, PLATFORM_TOOLS[4])
     registry.register("skill_propose", platform.skill_propose, PLATFORM_TOOLS[5])
+    registry.register("skill_equip", platform.skill_equip, PLATFORM_TOOLS[6])
 
     # Resource tools (DB-backed when available)
     from inotagent.tools.resources import RESOURCE_TOOLS, ResourceTools

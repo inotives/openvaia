@@ -195,7 +195,7 @@ class AgentLoop:
                     content=response.content,
                     channel_type=channel_type,
                     tool_calls=response.tool_calls,
-                    metadata=_usage_meta(response, self.config.model_id),
+                    metadata=_usage_meta(response, self.config.model_id, self.config._skill_names),
                 )
 
             # Execute each tool call and collect results
@@ -249,7 +249,7 @@ class AgentLoop:
                 role="assistant",
                 content=response.content,
                 channel_type=channel_type,
-                metadata=_usage_meta(response, self.config.model_id),
+                metadata=_usage_meta(response, self.config.model_id, self.config._skill_names),
             )
 
         # Update skill metrics — track usage
@@ -308,14 +308,27 @@ class AgentLoop:
             return False
 
 
-def _usage_meta(response: LLMResponse, model_id: str) -> dict:
-    """Build metadata dict with token usage from an LLM response."""
-    return {
+def _usage_meta(
+    response: LLMResponse,
+    model_id: str,
+    skill_names: list[str] | None = None,
+    chain_name: str | None = None,
+    chain_phase: str | None = None,
+) -> dict:
+    """Build metadata dict with token usage, active skills, and chain info."""
+    meta = {
         "model": model_id,
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
         "total_tokens": response.usage.total_tokens,
     }
+    if skill_names:
+        meta["skills"] = skill_names
+    if chain_name:
+        meta["chain"] = chain_name
+    if chain_phase:
+        meta["chain_phase"] = chain_phase
+    return meta
 
 
 def _summarize_args(args: dict) -> str:
