@@ -208,11 +208,21 @@ class Heartbeat:
 
         # Dynamic skill loading — match task to chain and load phase skills
         try:
-            from inotagent.db.skill_chains import match_chain, set_task_chain_state
-            chain = await match_chain(task_tags, top["title"])
-            if chain:
-                # Set initial chain_state on the task
-                await set_task_chain_state(top["key"], chain)
+            from inotagent.db.skill_chains import match_chain, set_task_chain_state, clear_gate, load_skills_by_names
+            import json as _json
+
+            # Check if task already has a chain (resuming after gate approval)
+            existing_state = await self._get_task_chain_state(top["key"])
+            if existing_state and existing_state.get("gate_pending"):
+                # Human approved — clear gate and load current phase skills
+                await clear_gate(top["key"])
+                phase_skills_names = existing_state.get("active_skills", [])
+                logger.info(f"Gate cleared for {top['key']}, resuming phase: {existing_state.get('current_phase')}")
+            elif not existing_state or not existing_state.get("chain_name"):
+                # New task — match to chain
+                chain = await match_chain(task_tags, top["title"])
+                if chain:
+                    await set_task_chain_state(top["key"], chain)
 
             skill_ids, skill_names, skill_content = await self.agent_loop.config.get_skills_for_task(
                 task_tags=task_tags, task_title=top["title"]
@@ -311,6 +321,26 @@ class Heartbeat:
         asyncio.create_task(
             self.agent_loop.run(prompt, conversation_id=conversation_id, channel_type="cron")
         )
+
+    async def _get_task_chain_state(self, task_key: str) -> dict | None:
+        """Get chain_state from a task."""
+        schema = get_schema()
+        try:
+            async with get_connection() as conn:
+                cur = await conn.execute(
+                    f"SELECT chain_state FROM {schema}.tasks WHERE key = %s",
+                    (task_key,),
+                )
+                row = await cur.fetchone()
+            if not row or not row["chain_state"]:
+                return None
+            state = row["chain_state"]
+            if isinstance(state, str):
+                import json
+                state = json.loads(state)
+            return state
+        except Exception:
+            return None
 
     # --- Proactive idle behavior ---
 

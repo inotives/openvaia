@@ -100,6 +100,9 @@ async def set_task_chain_state(task_key: str, chain: dict) -> None:
 async def advance_chain_phase(task_key: str, completed_phase: str) -> dict | None:
     """Advance a task's chain to the next phase after a phase completes.
 
+    If the next step has a gate (e.g., human_approval), the task is set to
+    'review' status so human can approve before the agent continues.
+
     Returns the new step dict (with skills + gate) or None if chain is done.
     """
     schema = get_schema()
@@ -143,10 +146,32 @@ async def advance_chain_phase(task_key: str, completed_phase: str) -> dict | Non
             state["current_step_index"] = current_idx
             state["active_skills"] = next_step.get("skills", [])
 
-        await conn.execute(
-            f"UPDATE {schema}.tasks SET chain_state = %s WHERE key = %s",
-            (json.dumps(state), task_key),
-        )
+        # Check if next step has a gate
+        next_step = steps[current_idx] if current_idx < len(steps) else None
+        has_gate = next_step and next_step.get("gate") == "human_approval"
+
+        if has_gate:
+            # Set task to 'review' — human must approve before agent continues
+            state["gate_pending"] = True
+            state["gate_type"] = "human_approval"
+            state["gate_message"] = (
+                f"Phase '{completed_phase}' complete. "
+                f"Next phase '{next_step.get('phase', '')}' requires human approval. "
+                f"Review the document and set task back to 'todo' to continue."
+            )
+            await conn.execute(
+                f"UPDATE {schema}.tasks SET chain_state = %s, status = 'review' WHERE key = %s",
+                (json.dumps(state), task_key),
+            )
+            logger.info(
+                f"Chain gate: task={task_key}, completed={completed_phase}, "
+                f"next={next_step.get('phase')} requires human_approval — task set to review"
+            )
+        else:
+            await conn.execute(
+                f"UPDATE {schema}.tasks SET chain_state = %s WHERE key = %s",
+                (json.dumps(state), task_key),
+            )
 
     new_phase = state.get("current_phase", "done")
     logger.info(f"Chain advanced: task={task_key}, completed={completed_phase}, now={new_phase}")
@@ -154,6 +179,33 @@ async def advance_chain_phase(task_key: str, completed_phase: str) -> dict | Non
     if current_idx < len(steps):
         return steps[current_idx]
     return None
+
+
+async def clear_gate(task_key: str) -> None:
+    """Clear a pending gate on a task (after human approves)."""
+    schema = get_schema()
+    async with get_connection() as conn:
+        cur = await conn.execute(
+            f"SELECT chain_state FROM {schema}.tasks WHERE key = %s",
+            (task_key,),
+        )
+        row = await cur.fetchone()
+        if not row or not row["chain_state"]:
+            return
+
+        state = row["chain_state"]
+        if isinstance(state, str):
+            state = json.loads(state)
+
+        state.pop("gate_pending", None)
+        state.pop("gate_type", None)
+        state.pop("gate_message", None)
+
+        await conn.execute(
+            f"UPDATE {schema}.tasks SET chain_state = %s WHERE key = %s",
+            (json.dumps(state), task_key),
+        )
+    logger.info(f"Gate cleared: task={task_key}")
 
 
 async def load_skills_by_names(skill_names: list[str]) -> list[dict]:

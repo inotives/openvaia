@@ -32,3 +32,12 @@ Branch started: 2026-04-02
 - `research_store` hook — auto-advances chain when PROP:/SPEC:/DESIGN:/VERIFY: documents are stored
 - chain_state stored as JSONB on tasks: current_phase, step_index, completed_phases, active_skills, chain_name
 - Tested: task TEST-001 → chain_state set with research_quick, phase=research, active_skills=["research_methodology"]
+
+### Phase 4: Human Approval Gates
+- When chain step has `"gate": "human_approval"`, task auto-sets to `review` status
+- chain_state gets `gate_pending=true` with gate message
+- Agent stops working — waits for human to review and set task back to `todo`
+- Heartbeat detects resumed task → clears gate → loads next phase's skills → agent continues
+- `clear_gate()` helper removes gate flags from chain_state
+- `_get_task_chain_state()` helper reads chain_state for gate detection
+- Flow: agent completes phase → stores doc → gate triggers → task=review → human approves → task=todo → heartbeat resumes with next phase
