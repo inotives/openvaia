@@ -24,3 +24,11 @@ Branch started: 2026-04-02
 - Added `tags` to pending task query
 - Static skills as fallback when no chain matches or dynamic loading fails
 - Tested: task with `research` tag → matched `research_quick` chain → loaded `research_methodology` skill
+
+### Phase 3: Chain State Tracking + Auto-Advancement
+- `set_task_chain_state()` — sets initial chain_state on task when chain is matched
+- `advance_chain_phase()` — advances chain to next step, updates chain_state on task
+- Heartbeat sets chain_state when task is first picked up
+- `research_store` hook — auto-advances chain when PROP:/SPEC:/DESIGN:/VERIFY: documents are stored
+- chain_state stored as JSONB on tasks: current_phase, step_index, completed_phases, active_skills, chain_name
+- Tested: task TEST-001 → chain_state set with research_quick, phase=research, active_skills=["research_methodology"]

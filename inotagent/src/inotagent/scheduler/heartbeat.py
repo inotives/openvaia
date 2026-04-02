@@ -208,6 +208,12 @@ class Heartbeat:
 
         # Dynamic skill loading — match task to chain and load phase skills
         try:
+            from inotagent.db.skill_chains import match_chain, set_task_chain_state
+            chain = await match_chain(task_tags, top["title"])
+            if chain:
+                # Set initial chain_state on the task
+                await set_task_chain_state(top["key"], chain)
+
             skill_ids, skill_names, skill_content = await self.agent_loop.config.get_skills_for_task(
                 task_tags=task_tags, task_title=top["title"]
             )

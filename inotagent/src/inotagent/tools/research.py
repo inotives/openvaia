@@ -93,6 +93,24 @@ class ResearchTools:
         report_id = await store_report(
             self.agent_name, title, summary, body, tags=tags, task_key=task_key,
         )
+
+        # Auto-advance chain phase when spec-driven documents are stored
+        if task_key:
+            try:
+                from inotagent.db.skill_chains import advance_chain_phase
+                prefix_to_phase = {
+                    "PROP:": "propose",
+                    "SPEC:": "specify",
+                    "DESIGN:": "design",
+                    "VERIFY:": "verify",
+                }
+                for prefix, phase in prefix_to_phase.items():
+                    if title.startswith(prefix):
+                        await advance_chain_phase(task_key, phase)
+                        break
+            except Exception:
+                pass  # chain advancement is best-effort
+
         return f"Research report saved (id={report_id}): {title}"
 
     async def research_search(

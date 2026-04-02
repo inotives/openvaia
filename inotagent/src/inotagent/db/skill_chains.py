@@ -72,6 +72,90 @@ async def get_chain_step_skills(chain: dict, step_index: int = 0) -> list[str]:
     return step.get("skills", [])
 
 
+async def set_task_chain_state(task_key: str, chain: dict) -> None:
+    """Set initial chain_state on a task when it's first matched to a chain."""
+    schema = get_schema()
+    steps = chain.get("steps", [])
+    if not steps:
+        return
+
+    state = json.dumps({
+        "current_phase": steps[0].get("phase", ""),
+        "current_step_index": 0,
+        "completed_phases": [],
+        "active_skills": steps[0].get("skills", []),
+        "chain_name": chain["name"],
+    })
+
+    async with get_connection() as conn:
+        await conn.execute(
+            f"""UPDATE {schema}.tasks
+                SET chain_id = %s, chain_state = %s
+                WHERE key = %s AND chain_id IS NULL""",
+            (chain["id"], state, task_key),
+        )
+    logger.info(f"Chain state set: task={task_key}, chain={chain['name']}, phase={steps[0].get('phase')}")
+
+
+async def advance_chain_phase(task_key: str, completed_phase: str) -> dict | None:
+    """Advance a task's chain to the next phase after a phase completes.
+
+    Returns the new step dict (with skills + gate) or None if chain is done.
+    """
+    schema = get_schema()
+
+    async with get_connection() as conn:
+        # Get current chain_state and chain steps
+        cur = await conn.execute(
+            f"""SELECT t.chain_state, sc.steps
+                FROM {schema}.tasks t
+                JOIN {schema}.skill_chains sc ON sc.id = t.chain_id
+                WHERE t.key = %s AND t.chain_id IS NOT NULL""",
+            (task_key,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return None
+
+        state = row["chain_state"]
+        if isinstance(state, str):
+            state = json.loads(state)
+        steps = row["steps"]
+        if isinstance(steps, str):
+            steps = json.loads(steps)
+
+        # Advance to next step
+        completed = state.get("completed_phases", [])
+        if completed_phase not in completed:
+            completed.append(completed_phase)
+
+        current_idx = state.get("current_step_index", 0) + 1
+        if current_idx >= len(steps):
+            # Chain complete
+            state["completed_phases"] = completed
+            state["current_phase"] = "done"
+            state["current_step_index"] = len(steps) - 1
+            state["active_skills"] = []
+        else:
+            next_step = steps[current_idx]
+            state["completed_phases"] = completed
+            state["current_phase"] = next_step.get("phase", "")
+            state["current_step_index"] = current_idx
+            state["active_skills"] = next_step.get("skills", [])
+
+        await conn.execute(
+            f"UPDATE {schema}.tasks SET chain_state = %s WHERE key = %s",
+            (json.dumps(state), task_key),
+        )
+
+    new_phase = state.get("current_phase", "done")
+    logger.info(f"Chain advanced: task={task_key}, completed={completed_phase}, now={new_phase}")
+
+    if current_idx < len(steps):
+        return steps[current_idx]
+    return None
+
+
 async def load_skills_by_names(skill_names: list[str]) -> list[dict]:
     """Load skills by their names. Returns list of {id, name, content}."""
     if not skill_names:
