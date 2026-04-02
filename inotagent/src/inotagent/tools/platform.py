@@ -435,7 +435,11 @@ class PlatformTools:
         return f"Evolution proposal ({type}) for {label} submitted. Awaiting human review."
 
     async def skill_equip(self, name: str) -> str:
-        """Load a skill into the current conversation context on-demand."""
+        """Load a skill into the current conversation context on-demand.
+
+        Returns the skill content directly — the LLM reads it from the tool result.
+        Does NOT mutate the shared config (that would leak across conversations).
+        """
         if not self.db_available:
             return _DB_NOT_CONNECTED
 
@@ -444,11 +448,4 @@ class PlatformTools:
         if not skill:
             return f"Error: Skill '{name}' not found or not active."
 
-        # Inject into the agent's current skill set (non-persistent)
-        if hasattr(self, '_agent_config') and self._agent_config:
-            if name not in self._agent_config._skill_names:
-                self._agent_config._skill_ids.append(skill["id"])
-                self._agent_config._skill_names.append(skill["name"])
-                self._agent_config._skill_content += "\n\n" + skill["content"]
-
-        return f"Skill '{name}' loaded into current conversation. Content:\n\n{skill['content'][:500]}..."
+        return f"Skill '{name}' loaded. Follow these instructions:\n\n{skill['content']}"

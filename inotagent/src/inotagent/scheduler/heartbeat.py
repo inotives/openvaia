@@ -227,7 +227,10 @@ class Heartbeat:
             skill_ids, skill_names, skill_content = await self.agent_loop.config.get_skills_for_task(
                 task_tags=task_tags, task_title=top["title"]
             )
-            # Temporarily override skills for this task conversation
+            # Snapshot static skills, override for this task, restore after
+            _orig_ids = self.agent_loop.config._skill_ids
+            _orig_names = self.agent_loop.config._skill_names
+            _orig_content = self.agent_loop.config._skill_content
             self.agent_loop.config._skill_ids = skill_ids
             self.agent_loop.config._skill_names = skill_names
             self.agent_loop.config._skill_content = skill_content
@@ -244,6 +247,14 @@ class Heartbeat:
         asyncio.create_task(
             self.agent_loop.run(prompt, conversation_id=conversation_id, channel_type="cron")
         )
+
+        # Restore static skills — loop.py snapshots at conversation start
+        try:
+            self.agent_loop.config._skill_ids = _orig_ids
+            self.agent_loop.config._skill_names = _orig_names
+            self.agent_loop.config._skill_content = _orig_content
+        except NameError:
+            pass
 
     async def _check_missions(self) -> list[dict]:
         """Check for unassigned backlog tasks matching this agent's mission_tags."""

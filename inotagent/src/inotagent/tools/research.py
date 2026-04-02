@@ -108,8 +108,9 @@ class ResearchTools:
                     if title.startswith(prefix):
                         await advance_chain_phase(task_key, phase)
                         break
-            except Exception:
-                pass  # chain advancement is best-effort
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Chain advance failed for task {task_key}: {e}")
 
         return f"Research report saved (id={report_id}): {title}"
 

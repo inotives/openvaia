@@ -11,9 +11,12 @@ Usage:
 
 import json
 import os
+import re
 import sys
 
 import psycopg
+
+_SCHEMA_PATTERN = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 SKILL_CHAINS = [
     # === CODING CHAINS ===
@@ -182,6 +185,9 @@ def main():
     force = "--force" in sys.argv
 
     schema = os.environ.get("PLATFORM_SCHEMA", "platform")
+    if not _SCHEMA_PATTERN.match(schema):
+        print(f"Error: invalid schema name '{schema}'")
+        sys.exit(1)
 
     with psycopg.connect(
         host=os.environ["POSTGRES_HOST"],
