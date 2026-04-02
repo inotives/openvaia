@@ -22,6 +22,51 @@ For project overview, see `docs/project_summary.md`. For technical specs, see `d
 - Docker project name: `openvaia`
 - uv for Python package management
 
+## Development Workflow
+
+This is the standard workflow for all feature development in this project:
+
+### 1. Plan (ES-XXXX)
+- Create an Enhancement Plan (`docs/plans/ES-XXXX__<topic>.md`)
+- Define: problem, solution, implementation phases, guardrails
+- Discuss and refine until approved
+- Commit the plan to main
+
+### 2. Branch
+- Create feature branch: `git checkout -b feature/<topic>`
+- Create changelog: `docs/changelogs/CHG_<YYYYMMDD>_<branch>.md`
+
+### 3. Implement (per phase)
+For each phase in the ES plan:
+1. **Implement** the phase (code, skills, migrations, API endpoints)
+2. **Test** — verify it works (run locally, check logs, validate DB)
+3. **Update changelog** with what was done
+4. **Commit** the phase with descriptive message
+
+Repeat until all phases are complete.
+
+### 4. Review
+- Security audit — check for leaked secrets, SQL injection, XSS
+- Update docs — CLAUDE.md, project_summary.md, project_specs.md, README.md
+- Verify all counts are accurate (skills, tools, migrations)
+- Final commit with doc updates
+
+### 5. Push & PR
+- Push branch: `git push -u origin feature/<topic>`
+- Create PR with summary + test plan
+- Human reviews and merges
+
+### 6. Cleanup
+- `git checkout main && git pull origin main`
+- Move completed ES plan to `docs/plans/archived/` (if fully done)
+- Start next feature
+
+### Hotfixes
+For urgent fixes outside of a plan:
+- Commit directly to main with `fix:` prefix
+- Push immediately: `git push origin main`
+- Rebuild: `make deploy-all`
+
 ## Enhancement Plans
 
 Plans live in `docs/plans/` with this lifecycle:
