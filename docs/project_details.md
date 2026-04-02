@@ -639,9 +639,13 @@ Update `AGENTS.md` for agents that need to know about the new team member:
 - [x] Skill quality metrics tracking (per-agent, per-skill: selected, applied, completed, fallback)
 - [x] Skill version history with lineage (origin, generation, parent tracking)
 - [x] Skill evolution proposals API (list, get, approve/reject with auto-apply)
-- [x] 98 skills (4 global + 94 non-global) from 4 sources (community, superpowers, gstack, platform)
+- [x] 103 skills (5 global + 98 non-global) from 5 sources (community, superpowers, gstack, openspec, platform)
+- [x] Spec-driven development skills (ES-0013): proposal, requirement spec, technical design, verification
+- [x] Document tagging convention (PROP:/SPEC:/DESIGN:/VERIFY:)
+- [x] Global development_workflow skill — routes agents to correct workflow by complexity
 
 ### v2 (DRAFTs)
+- [ ] Dynamic skill equipping — skill chains with phase-based loading (ES-0014)
 - [ ] Production deployment (internet-facing hosting)
 - [ ] Parallel execution (concurrent tool calls)
 - [ ] Robin trading toolkit — agent-first CLI tools for autonomous crypto trading (ES-0012)

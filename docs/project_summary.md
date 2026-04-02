@@ -271,7 +271,7 @@ Defined in `inotagent/entrypoint.sh`. Supports multi-agent mode where bootstrap 
 - [x] Agent-to-agent messaging (Postgres spaces)
 - [x] Sub-agent delegation via `delegate` tool
 - [x] Git repo management via `agent_repos` table
-- [x] DB-driven skills system (98 skill files: 4 global + 94 non-global, imported via `make import-skills`)
+- [x] DB-driven skills system (103 skill files: 5 global + 98 non-global, imported via `make import-skills`)
 - [x] Runtime-configurable agent settings via `agent_configs` table (model, fallbacks, mission_tags, parallel)
 - [x] Next.js + Ant Design admin dashboard (Dashboard, Tasks, Agents, Skills, Resources, Prompt Gen, Config, Gamified Office)
 - [x] Agent detail page (Overview, Chat, Skills, Repos, Tasks, Research, Memory, Memory Graph, Settings)
@@ -322,8 +322,15 @@ Defined in `inotagent/entrypoint.sh`. Supports multi-agent mode where bootstrap 
 - [x] DB migration 006: `skill_metrics`, `skill_versions`, `skill_evolution_proposals` tables
 - [x] Phase 4-6 deferred pending observation (skill evolver agent, metric triggers, admin UI dashboard)
 
+### ES-0013 — Spec-Driven Development Skills
+- [x] 4 spec-driven skills from OpenSpec: proposal (PROP:), requirement spec (SPEC:), technical design (DESIGN:), verification (VERIFY:)
+- [x] Document tagging convention for planning artifacts
+- [x] Global `development_workflow` skill — routes agents to correct workflow based on task complexity
+- [x] 103 skills total (5 global + 98 non-global) from 5 sources
+
 ## What's Next (DRAFTs)
 
+- [ ] Dynamic skill equipping — skill chains with phase-based loading (ES-0014)
 - [ ] Production deployment (internet-facing hosting)
 - [ ] Parallel execution (concurrent tool calls)
 - [ ] Robin trading toolkit — agent-first CLI tools for autonomous crypto trading (ES-0012)

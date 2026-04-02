@@ -283,16 +283,36 @@ Not every change needs all 5 documents. Agent decides based on complexity:
 | **Medium feature** | Proposal + Spec + Plan + Verification | "Add email notifications" |
 | **Large feature** | All 5 (brainstorm + proposal + spec + design + plan) + Verification | "Multi-agent trading system" |
 
-### Document Storage
+### Document Storage & Tagging Convention
 
-| Document | Storage | Tool Used |
-|----------|---------|-----------|
-| Brainstorming notes | Agent memory | `memory_store` |
-| Proposal | Research report | `research_store` |
-| Requirement spec | Research report | `research_store` |
-| Technical design | Research report | `research_store` |
-| Implementation plan | Task with subtasks | `task_create` |
-| Verification report | Research report | `research_store` |
+All documents stored via `research_store` with a standardized prefix and tag for easy discovery:
+
+| Document | Title Prefix | Required Tag | Tool | Example Title |
+|----------|-------------|-------------|------|---------------|
+| Brainstorming notes | — | — | `memory_store` | (stored in memory, not research) |
+| Proposal | `PROP:` | `proposal` | `research_store` | `PROP: Add Email Notifications` |
+| Requirement spec | `SPEC:` | `spec` | `research_store` | `SPEC: Email Notification System` |
+| Technical design | `DESIGN:` | `design` | `research_store` | `DESIGN: Email Notification System` |
+| Implementation plan | — | — | `task_create` | (stored as tasks, not research) |
+| Verification report | `VERIFY:` | `verification` | `research_store` | `VERIFY: Email Notification System` |
+
+**Searching by document type:**
+```
+research_search(tags=["proposal"])      → all proposals
+research_search(tags=["spec"])          → all requirement specs
+research_search(tags=["design"])        → all technical designs
+research_search(tags=["verification"]) → all verification reports
+research_search(query="email", tags=["proposal"])  → proposals about email
+```
+
+**Storage example:**
+```
+research_store(
+  title="PROP: Add Email Notifications",
+  body="## Motivation\n...",
+  tags=["proposal", "email", "notifications"]
+)
+```
 
 All discoverable via `research_search` and visible in the Admin UI Research tab + office panel.
 

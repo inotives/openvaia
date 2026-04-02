@@ -14,7 +14,7 @@ Dockerized multi-agent AI platform powered by **inotagent** — a custom async P
 ## Design Philosophy
 
 - **Runtime-pluggable**: inotagent is the default runtime, but agents (`agents/`) and runtime (`inotagent/`) are deliberately separated. Agents are consumers of the runtime, not part of it. Identity files (AGENTS.md, TOOLS.md, .env) are runtime-agnostic.
-- **DB-driven skills**: 98 skill files in `inotagent/skills/` (4 global + 94 non-global). Imported via `make import-skills`. Stored in Postgres, injected into system prompt at startup and refreshed every heartbeat (60s). Skills can be edited via Admin UI without redeploy.
+- **DB-driven skills**: 103 skill files in `inotagent/skills/` (5 global + 98 non-global). Imported via `make import-skills`. Stored in Postgres, injected into system prompt at startup and refreshed every heartbeat (60s). Skills can be edited via Admin UI without redeploy.
 - **Skill file naming**: `0__<name>.md` = global (all agents), `1__<name>.md` = non-global (equip via UI). Token count shown in each file.
 - **Hybrid memory search**: Postgres FTS (30%) + pgvector embeddings (70%). Falls back to FTS-only when embeddings unavailable.
 - **Recurring tasks**: Replace cron — `schedule:daily@00:00`, `schedule:hourly`, `schedule:monthly@00:00` tags on tasks. Heartbeat resets completed tasks automatically.
@@ -57,7 +57,7 @@ inotagent/        - Custom agent runtime (async Python)
     loop.py         - Core agent reasoning loop (prompt → LLM → tools → response)
     main.py         - Entry point (single-agent, multi-agent, CLI, one-shot)
     bootstrap.py    - One-time setup (register, spaces, repos, announce)
-  skills/           - 98 skill files (4 global + 94 non-global, imported via make import-skills)
+  skills/           - 103 skill files (5 global + 98 non-global, imported via make import-skills)
   tests/            - Unit tests (350 tests)
   Dockerfile        - Base image definition
   entrypoint.sh     - Container boot sequence (single + multi-agent)

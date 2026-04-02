@@ -137,7 +137,7 @@ make logs AGENT=ino
 You should see:
 ```
 === inotagent boot: ino ===
-Agent 'ino' initialized with model 'nvidia-minimax-2.5' (20 tools, db=yes)
+Agent 'ino' initialized with model 'nvidia-minimax-2.5' (21 tools, db=yes)
 Heartbeat started for ino
 Discord connected: ino#0021
 ```
@@ -149,7 +149,7 @@ Full setup guide: [Project Details](docs/project_details.md)
 - **Multi-agent container** — multiple agents share one container (DB pool, browser, embedding client). Or run 1:1 — same image, just change the `AGENTS` env var.
 - **21-tool system** — shell, files, browser, Discord, tasks, messaging, memory, research, skills, skill_propose, resources, email, and delegate (sub-agents).
 - **Sub-agents** — `delegate` tool spawns ephemeral specialist LLM calls using skills as system prompts. Code review, security scan, QA — one call, no overhead.
-- **98 skills library** — 4 global + 94 non-global, extracted from community templates, superpowers, gstack, and platform workflows. Import via `make import-skills`.
+- **103 skills library** — 5 global + 98 non-global, extracted from community templates, superpowers, gstack, and platform workflows. Import via `make import-skills`.
 - **Self-evolving skills** — agents propose skill improvements (FIX/DERIVED/CAPTURED) via `skill_propose` tool. Human reviews and approves. Full version history with lineage tracking.
 - **Multi-channel inbox** — Discord (discord.py), Slack (Socket Mode), Telegram (with allowFrom security).
 - **Hybrid memory search** — Postgres FTS (30%) + pgvector semantic embedding (70%) — finds relevant memories even without keyword overlap.
@@ -188,6 +188,7 @@ The skill library includes knowledge extracted and adapted from these open-sourc
 
 - **[superpowers](https://github.com/obra/superpowers)** by [@obra](https://github.com/obra) — AI agent workflow framework with composable skills for systematic debugging, TDD, brainstorming, plan writing, and subagent-driven development. MIT License.
 - **[gstack](https://github.com/garrytan/gstack)** by [@garrytan](https://github.com/garrytan) — Full dev lifecycle toolkit with skills for code review, security audits, QA testing, shipping, canary monitoring, and engineering retrospectives.
+- **[OpenSpec](https://github.com/Fission-AI/OpenSpec)** by [Fission AI](https://github.com/Fission-AI) — Spec-driven development framework for structured proposals, RFC 2119 requirements, technical designs, and verification. MIT License.
 
 Skills were extracted by stripping identity/personality content and preserving actionable workflows, checklists, and domain frameworks. Original source attribution is included in each skill file's frontmatter.
 
