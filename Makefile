@@ -46,6 +46,7 @@ clean-slate: wipe-db deploy-all
 	@sleep 15
 	$(MAKE) import-skills
 	$(MAKE) seed-tasks
+	$(MAKE) seed-chains
 
 # Tear down everything (removes containers)
 down:
@@ -185,6 +186,77 @@ reimport-skills:
 # Seed recurring tasks for proactive agent behavior
 seed-tasks:
 	POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia} python3 scripts/seed-recurring-tasks.py
+
+# Seed skill chains for dynamic skill equipping
+seed-chains:
+	POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia} python3 scripts/seed-skill-chains.py
+
+# ============================================================
+# Local Development (without Docker)
+# ============================================================
+
+# Prerequisites: Python 3.12, uv, Postgres running, dbmate installed
+# Usage:
+#   make db                    # start Postgres (Docker)
+#   make local-setup           # first time: install deps + migrate + seed
+#   make local-run AGENT=ino   # run single agent
+#   make local-run-multi       # run multi-agent (ino,robin)
+
+DB_ENV = POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia}
+
+# Install Python dependencies locally via uv
+local-install:
+	cd inotagent && uv sync --no-dev
+
+# Run DB migrations locally (requires dbmate)
+local-migrate:
+	@SCHEMA=$${PLATFORM_SCHEMA:-openvaia}; \
+	MIGRATION_DIR=$$(mktemp -d); \
+	cp infra/postgres/migrations/*.sql "$$MIGRATION_DIR/"; \
+	if [ "$$SCHEMA" != "platform" ]; then \
+		sed -i.bak "s/CREATE SCHEMA IF NOT EXISTS platform/CREATE SCHEMA IF NOT EXISTS $$SCHEMA/g" "$$MIGRATION_DIR"/*.sql; \
+		sed -i.bak "s/DROP SCHEMA IF EXISTS platform/DROP SCHEMA IF EXISTS $$SCHEMA/g" "$$MIGRATION_DIR"/*.sql; \
+		sed -i.bak "s/platform\./$$SCHEMA./g" "$$MIGRATION_DIR"/*.sql; \
+		rm -f "$$MIGRATION_DIR"/*.bak; \
+	fi; \
+	DB_URL="postgresql://inotives:$$(grep POSTGRES_PASSWORD .env | cut -d= -f2)@localhost:$${EXTERNAL_POSTGRES_PORT:-5445}/inotives?sslmode=disable"; \
+	dbmate -d "$$MIGRATION_DIR" --url "$$DB_URL" --no-dump-schema up; \
+	rm -rf "$$MIGRATION_DIR"
+
+# Full local setup: install + migrate + import skills + seed tasks + seed chains
+local-setup: local-install local-migrate import-skills seed-tasks seed-chains
+	@echo "Local setup complete. Run: make local-run AGENT=ino"
+
+# Run single agent locally
+# Exports DB vars + agent env, DB vars set LAST to override Docker defaults
+local-run:
+	@if [ -z "$(AGENT)" ]; then echo "Usage: make local-run AGENT=ino"; exit 1; fi
+	@echo "Starting $(AGENT) locally (Postgres on localhost:$${EXTERNAL_POSTGRES_PORT:-5445})..."
+	@export POSTGRES_HOST=localhost; \
+	export POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445}; \
+	export POSTGRES_USER=inotives; \
+	export POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2); \
+	export POSTGRES_DB=inotives; \
+	export PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia}; \
+	set -a; . agents/$(AGENT)/.env 2>/dev/null; set +a; \
+	export POSTGRES_HOST=localhost; \
+	export POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445}; \
+	cd inotagent && uv run python -m inotagent --agent-dir ../agents/$(AGENT)
+
+# Run multi-agent locally
+local-run-multi:
+	@echo "Starting agents locally (Postgres on localhost:$${EXTERNAL_POSTGRES_PORT:-5445})..."
+	@export POSTGRES_HOST=localhost; \
+	export POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445}; \
+	export POSTGRES_USER=inotives; \
+	export POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2); \
+	export POSTGRES_DB=inotives; \
+	export PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia}; \
+	cd inotagent && uv run python -m inotagent --agents $${AGENTS:-ino,robin}
+
+# Stop locally running agents
+local-stop:
+	@pkill -f 'python -m inotagent' 2>/dev/null && echo "Local agent(s) stopped" || echo "No local agents running"
 
 # Run project integrity tests
 test:

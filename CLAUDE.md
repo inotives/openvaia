@@ -5,8 +5,8 @@ For project overview, see `docs/project_summary.md`. For technical specs, see `d
 ## Quick Reference
 
 - **103 skill files** (5 global + 98 non-global) in `inotagent/skills/`
-- **21 tools** in `inotagent/src/inotagent/tools/`
-- **6 DB migrations** in `infra/postgres/migrations/`
+- **22 tools** in `inotagent/src/inotagent/tools/`
+- **7 DB migrations** in `infra/postgres/migrations/`
 - **Runtime**: inotagent (async Python), Docker, Postgres + pgvector
 - **UI**: Next.js + Ant Design (port 7860), Gamified Office (`/office`)
 - **Package managers**: uv (Python), npm (UI)
@@ -21,6 +21,51 @@ For project overview, see `docs/project_summary.md`. For technical specs, see `d
 - Skills: `0__` prefix = global (all agents), `1__` prefix = non-global (equip via UI)
 - Docker project name: `openvaia`
 - uv for Python package management
+
+## Development Workflow
+
+This is the standard workflow for all feature development in this project:
+
+### 1. Plan (ES-XXXX)
+- Create an Enhancement Plan (`docs/plans/ES-XXXX__<topic>.md`)
+- Define: problem, solution, implementation phases, guardrails
+- Discuss and refine until approved
+- Commit the plan to main
+
+### 2. Branch
+- Create feature branch: `git checkout -b feature/<topic>`
+- Create changelog: `docs/changelogs/CHG_<YYYYMMDD>_<branch>.md`
+
+### 3. Implement (per phase)
+For each phase in the ES plan:
+1. **Implement** the phase (code, skills, migrations, API endpoints)
+2. **Test** — verify it works (run locally, check logs, validate DB)
+3. **Update changelog** with what was done
+4. **Commit** the phase with descriptive message
+
+Repeat until all phases are complete.
+
+### 4. Review
+- Security audit — check for leaked secrets, SQL injection, XSS
+- Update docs — CLAUDE.md, project_summary.md, project_specs.md, README.md
+- Verify all counts are accurate (skills, tools, migrations)
+- Final commit with doc updates
+
+### 5. Push & PR
+- Push branch: `git push -u origin feature/<topic>`
+- Create PR with summary + test plan
+- Human reviews and merges
+
+### 6. Cleanup
+- `git checkout main && git pull origin main`
+- Move completed ES plan to `docs/plans/archived/` (if fully done)
+- Start next feature
+
+### Hotfixes
+For urgent fixes outside of a plan:
+- Commit directly to main with `fix:` prefix
+- Push immediately: `git push origin main`
+- Rebuild: `make deploy-all`
 
 ## Enhancement Plans
 
@@ -104,6 +149,7 @@ make import-skills           - Import skills from inotagent/skills/ (skip existi
 make reset-skill NAME=x      - Reset one skill to file version
 make reimport-skills         - Force re-import all skills
 make seed-tasks              - Seed recurring tasks for proactive agent behavior
+make seed-chains             - Seed skill chains for dynamic skill equipping
 
 # Admin UI
 make ui                      - Build + start Docker UI (port 7860)
@@ -123,6 +169,14 @@ make task-board
 make repo-list [AGENT=]
 make repo-add URL=... NAME=... TO=robin BY=ino
 make repo-remove URL=... AGENT=robin
+
+# Local Development (without Docker)
+make local-setup             - First time: install deps + migrate + seed everything
+make local-run AGENT=ino     - Run single agent locally
+make local-run-multi         - Run multi-agent locally (AGENTS=ino,robin)
+make local-stop              - Stop locally running agents
+make local-install           - Install Python deps via uv
+make local-migrate           - Run DB migrations locally
 
 # Testing
 make test                    - Project integrity tests

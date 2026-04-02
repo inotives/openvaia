@@ -147,7 +147,7 @@ class Heartbeat:
         schema = get_schema()
         async with get_connection() as conn:
             cur = await conn.execute(
-                f"""SELECT key, title, priority, created_by
+                f"""SELECT key, title, priority, created_by, tags
                     FROM {schema}.tasks
                     WHERE assigned_to = %s AND status = 'todo'
                     ORDER BY
@@ -198,12 +198,45 @@ class Heartbeat:
         )
 
     async def _trigger_task_pickup(self, tasks: list[dict]) -> None:
-        """If agent is idle, trigger task pickup via agent loop."""
+        """If agent is idle, trigger task pickup via agent loop with dynamic skill loading."""
         if self.agent_loop.is_busy():
             logger.debug("Heartbeat: agent busy, skipping task pickup")
             return
 
         top = tasks[0]
+        task_tags = top.get("tags") or []
+
+        # Dynamic skill loading — match task to chain and load phase skills
+        try:
+            from inotagent.db.skill_chains import match_chain, set_task_chain_state, clear_gate, load_skills_by_names
+            import json as _json
+
+            # Check if task already has a chain (resuming after gate approval)
+            existing_state = await self._get_task_chain_state(top["key"])
+            if existing_state and existing_state.get("gate_pending"):
+                # Human approved — clear gate and load current phase skills
+                await clear_gate(top["key"])
+                phase_skills_names = existing_state.get("active_skills", [])
+                logger.info(f"Gate cleared for {top['key']}, resuming phase: {existing_state.get('current_phase')}")
+            elif not existing_state or not existing_state.get("chain_name"):
+                # New task — match to chain
+                chain = await match_chain(task_tags, top["title"])
+                if chain:
+                    await set_task_chain_state(top["key"], chain)
+
+            skill_ids, skill_names, skill_content = await self.agent_loop.config.get_skills_for_task(
+                task_tags=task_tags, task_title=top["title"]
+            )
+            # Snapshot static skills, override for this task, restore after
+            _orig_ids = self.agent_loop.config._skill_ids
+            _orig_names = self.agent_loop.config._skill_names
+            _orig_content = self.agent_loop.config._skill_content
+            self.agent_loop.config._skill_ids = skill_ids
+            self.agent_loop.config._skill_names = skill_names
+            self.agent_loop.config._skill_content = skill_content
+        except Exception as e:
+            logger.warning(f"Dynamic skill loading failed, using static: {e}")
+
         prompt = (
             f"You have a pending task: {top['key']} [{top['priority']}] \"{top['title']}\" "
             f"(assigned by {top['created_by']}). "
@@ -214,6 +247,14 @@ class Heartbeat:
         asyncio.create_task(
             self.agent_loop.run(prompt, conversation_id=conversation_id, channel_type="cron")
         )
+
+        # Restore static skills — loop.py snapshots at conversation start
+        try:
+            self.agent_loop.config._skill_ids = _orig_ids
+            self.agent_loop.config._skill_names = _orig_names
+            self.agent_loop.config._skill_content = _orig_content
+        except NameError:
+            pass
 
     async def _check_missions(self) -> list[dict]:
         """Check for unassigned backlog tasks matching this agent's mission_tags."""
@@ -291,6 +332,26 @@ class Heartbeat:
         asyncio.create_task(
             self.agent_loop.run(prompt, conversation_id=conversation_id, channel_type="cron")
         )
+
+    async def _get_task_chain_state(self, task_key: str) -> dict | None:
+        """Get chain_state from a task."""
+        schema = get_schema()
+        try:
+            async with get_connection() as conn:
+                cur = await conn.execute(
+                    f"SELECT chain_state FROM {schema}.tasks WHERE key = %s",
+                    (task_key,),
+                )
+                row = await cur.fetchone()
+            if not row or not row["chain_state"]:
+                return None
+            state = row["chain_state"]
+            if isinstance(state, str):
+                import json
+                state = json.loads(state)
+            return state
+        except Exception:
+            return None
 
     # --- Proactive idle behavior ---
 

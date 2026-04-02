@@ -97,14 +97,40 @@ Running bootstrap...
 Agent 'ino' registered
 Bootstrap complete for 'ino'
 Starting inotagent for ino...
-Agent 'ino' initialized with model 'nvidia-minimax-2.5' (21 tools, db=yes)
+Agent 'ino' initialized with model 'nvidia-minimax-2.5' (22 tools, db=yes)
 Heartbeat started for ino
 Discord connected: ino#0021
 ```
 
 ---
 
-## Boot Sequence
+## Local Development (without Docker)
+
+Agents can run natively on the host machine instead of Docker. Same Postgres, same data — just different execution environment.
+
+**Prerequisites:** Python 3.12, uv, dbmate, Postgres running (Docker or local)
+
+```bash
+make db                      # start Postgres (Docker)
+make local-setup             # first time: install deps + migrate + seed
+make local-run AGENT=ino     # run single agent
+make local-run-multi         # run multi-agent (AGENTS=ino,robin)
+make local-stop              # stop local agents
+```
+
+**When to use local instead of Docker:**
+- GPU access needed (ML training, video processing)
+- Native display needed (Godot, headed Chrome, desktop automation)
+- Native app integration (FFmpeg, audio tools)
+- Faster iteration during development (no rebuild)
+
+**Shared state:** Docker and local agents share the same Postgres — conversations, memories, skills, tasks are all shared. Do NOT run the same agent in Docker AND locally simultaneously.
+
+**Hybrid deployment:** Run standard agents (ino, robin) in Docker, special agents (with GPU/display needs) locally — all sharing the same DB.
+
+---
+
+## Boot Sequence (Docker)
 
 Supports multi-agent mode where bootstrap runs per agent, then inotagent starts with `--agents ino,robin` (defined in `inotagent/entrypoint.sh`):
 
@@ -127,7 +153,7 @@ Supports multi-agent mode where bootstrap runs per agent, then inotagent starts 
                            • Load skills from DB (skills + agent_skills tables)
                            • Build system prompt (AGENTS.md + TOOLS.md + skills + model info)
                            • Count system prompt tokens (stored in agent_configs)
-                           • Create tool registry (21 tools)
+                           • Create tool registry (22 tools)
                            • Start heartbeat with recurring task scheduling (60s health + task/message/mission detection)
                            • Connect channels (Discord, Slack, Telegram as configured)
                            • Enter channel mode (await messages)
@@ -171,7 +197,7 @@ openvaia/
 │       │   ├── platform.py        # Tasks + messaging (Postgres-backed)
 │       │   ├── memory.py          # Memory store/search (hybrid FTS + pgvector embedding)
 │       │   ├── research.py        # Research report store/search/get
-│       │   └── setup.py           # Wire all 21 tools into registry
+│       │   └── setup.py           # Wire all 22 tools into registry
 │       ├── channels/              # Communication channels
 │       │   ├── discord.py         # Discord bot (discord.py)
 │       │   ├── slack.py           # Slack bot (slack-bolt, Socket Mode)
@@ -586,7 +612,7 @@ Update `AGENTS.md` for agents that need to know about the new team member:
 ### v1 (Current — inotagent)
 - [x] Custom async Python runtime
 - [x] Multi-provider LLM client (Anthropic + OpenAI-compat)
-- [x] Tool system (21 tools: shell, files, browser, discord_send, tasks, messaging, memory, research)
+- [x] Tool system (22 tools: shell, files, browser, discord_send, tasks, messaging, memory, research)
 - [x] Async Postgres persistence (conversations, memory with hybrid FTS + embedding search, research reports)
 - [x] Context window management (sliding window truncation)
 - [x] Heartbeat with recurring task scheduling + mission board
@@ -644,8 +670,14 @@ Update `AGENTS.md` for agents that need to know about the new team member:
 - [x] Document tagging convention (PROP:/SPEC:/DESIGN:/VERIFY:)
 - [x] Global development_workflow skill — routes agents to correct workflow by complexity
 
+### v1.5 — Dynamic Skill Equipping (ES-0014)
+- [x] Skill chains DB + 12 default chains (coding, bugfix, research, security, ops, trading)
+- [x] Task-aware dynamic skill loading with chain matching + phase progression
+- [x] Human approval gates for chain steps
+- [x] Skill usage metadata recording + skill_equip tool (#22)
+- [x] Token budget 9000, deduplication, static skill fallback
+
 ### v2 (DRAFTs)
-- [ ] Dynamic skill equipping — skill chains with phase-based loading (ES-0014)
 - [ ] Production deployment (internet-facing hosting)
 - [ ] Parallel execution (concurrent tool calls)
 - [ ] Robin trading toolkit — agent-first CLI tools for autonomous crypto trading (ES-0012)
