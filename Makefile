@@ -46,6 +46,7 @@ clean-slate: wipe-db deploy-all
 	@sleep 15
 	$(MAKE) import-skills
 	$(MAKE) seed-tasks
+	$(MAKE) seed-chains
 
 # Tear down everything (removes containers)
 down:
@@ -185,6 +186,10 @@ reimport-skills:
 # Seed recurring tasks for proactive agent behavior
 seed-tasks:
 	POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia} python3 scripts/seed-recurring-tasks.py
+
+# Seed skill chains for dynamic skill equipping
+seed-chains:
+	POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia} python3 scripts/seed-skill-chains.py
 
 # Run project integrity tests
 test:
