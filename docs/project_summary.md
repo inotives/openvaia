@@ -63,7 +63,7 @@ Agents are consumers of the runtime, not part of it. Agent identity files carry 
 ### v1 — Core Runtime (ES-0001 through ES-0007)
 - Custom async Python runtime (inotagent)
 - Multi-provider LLM client (Anthropic, OpenAI-compatible, NVIDIA NIM, Groq, Google)
-- 21-tool system (shell, files, browser, Discord, tasks, messaging, memory, research, resources, email, delegation, skill creation, skill proposals)
+- 22-tool system (shell, files, browser, Discord, tasks, messaging, memory, research, resources, email, delegation, skill creation, skill proposals, skill equip)
 - Multi-channel: Discord, Slack, Telegram
 - Async Postgres persistence (conversations, memory with hybrid FTS + embedding search, research reports)
 - Heartbeat with recurring task scheduling
@@ -85,9 +85,16 @@ Agents are consumers of the runtime, not part of it. Agent identity files carry 
 - Global development workflow orchestration skill
 - 103 skills total (5 global + 98 non-global)
 
-## What's Next
+### ES-0014 — Dynamic Skill Equipping
+- [x] Skill chains DB (`skill_chains` table) with 12 default chains seeded
+- [x] Task-aware skill loading — tags auto-match to chains, load phase-specific skills
+- [x] Chain state tracking on tasks (`chain_state` JSONB) with auto-advancement
+- [x] Human approval gates — chain steps can pause task for review
+- [x] Skill usage recorded in conversation metadata (skills, chain, phase)
+- [x] `skill_equip` tool (#22) — load any skill mid-conversation on-demand
+- [x] Token budget enforcement (9000 max), deduplication, static fallback
 
-- **ES-0014** — Dynamic skill equipping (skill chains with phase-based loading)
+## What's Next
 - **ES-0012** — Robin trading toolkit (agent-first CLI tools for autonomous crypto trading)
 - Production deployment (internet-facing hosting)
 - Parallel execution (concurrent tool calls)

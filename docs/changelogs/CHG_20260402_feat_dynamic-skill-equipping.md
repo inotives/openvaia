@@ -54,3 +54,12 @@ Branch started: 2026-04-02
 - Loads skill content into current context (non-persistent, this conversation only)
 - Returns first 500 chars of skill content as confirmation
 - Token budget still applies (skills added to _skill_content)
+
+### Security Fixes
+- Schema validation in seed-skill-chains.py (prevent SQL injection via env var)
+- skill_equip returns content directly instead of mutating shared config (prevents cross-conversation leaks)
+- Heartbeat restores static skills after dynamic override (prevents skill pollution)
+- Chain advancement errors logged instead of silently swallowed
+
+### Bug Fix
+- Snapshot skills at conversation start in loop.py — dynamic skills now correctly recorded in metadata

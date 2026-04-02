@@ -137,7 +137,7 @@ make logs AGENT=ino
 You should see:
 ```
 === inotagent boot: ino ===
-Agent 'ino' initialized with model 'nvidia-minimax-2.5' (21 tools, db=yes)
+Agent 'ino' initialized with model 'nvidia-minimax-2.5' (22 tools, db=yes)
 Heartbeat started for ino
 Discord connected: ino#0021
 ```
@@ -147,7 +147,8 @@ Full setup guide: [Project Details](docs/project_specs.md)
 ## Highlights
 
 - **Multi-agent container** — multiple agents share one container (DB pool, browser, embedding client). Or run 1:1 — same image, just change the `AGENTS` env var.
-- **21-tool system** — shell, files, browser, Discord, tasks, messaging, memory, research, skills, skill_propose, resources, email, and delegate (sub-agents).
+- **22-tool system** — shell, files, browser, Discord, tasks, messaging, memory, research, skills, skill_propose, skill_equip, resources, email, and delegate (sub-agents).
+- **Dynamic skill equipping** — tasks auto-match to skill chains based on tags. Agent loads only the skills needed for the current phase, not everything at once.
 - **Sub-agents** — `delegate` tool spawns ephemeral specialist LLM calls using skills as system prompts. Code review, security scan, QA — one call, no overhead.
 - **103 skills library** — 5 global + 98 non-global, extracted from community templates, superpowers, gstack, and platform workflows. Import via `make import-skills`.
 - **Self-evolving skills** — agents propose skill improvements (FIX/DERIVED/CAPTURED) via `skill_propose` tool. Human reviews and approves. Full version history with lineage tracking.

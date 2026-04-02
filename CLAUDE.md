@@ -5,8 +5,8 @@ For project overview, see `docs/project_summary.md`. For technical specs, see `d
 ## Quick Reference
 
 - **103 skill files** (5 global + 98 non-global) in `inotagent/skills/`
-- **21 tools** in `inotagent/src/inotagent/tools/`
-- **6 DB migrations** in `infra/postgres/migrations/`
+- **22 tools** in `inotagent/src/inotagent/tools/`
+- **7 DB migrations** in `infra/postgres/migrations/`
 - **Runtime**: inotagent (async Python), Docker, Postgres + pgvector
 - **UI**: Next.js + Ant Design (port 7860), Gamified Office (`/office`)
 - **Package managers**: uv (Python), npm (UI)
@@ -149,6 +149,7 @@ make import-skills           - Import skills from inotagent/skills/ (skip existi
 make reset-skill NAME=x      - Reset one skill to file version
 make reimport-skills         - Force re-import all skills
 make seed-tasks              - Seed recurring tasks for proactive agent behavior
+make seed-chains             - Seed skill chains for dynamic skill equipping
 
 # Admin UI
 make ui                      - Build + start Docker UI (port 7860)

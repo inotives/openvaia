@@ -1,6 +1,6 @@
 # ES-0014 — Dynamic Skill Equipping
 
-## Status: DRAFT
+## Status: COMPLETE (Phase 1-6)
 
 ## Problem
 
@@ -404,28 +404,28 @@ Use case: agent is mid-implementation and encounters a security concern — load
 
 ## Implementation Steps
 
-- [ ] Phase 1: Create `skill_chains` table (migration 007)
-- [ ] Phase 1: Add `chain_id` + `chain_state` columns to tasks table (migration 007)
-- [ ] Phase 1: Create `scripts/seed-skill-chains.py` with all default chains
-- [ ] Phase 1: Add `make seed-chains` command, hook into `make clean-slate`
-- [ ] Phase 2: Add `match_chain()` function — tag matching + keyword fallback
-- [ ] Phase 2: Modify skill loading to be task-aware (`get_skills_for_task()`)
-- [ ] Phase 2: Load phase-specific skills when task is picked up via heartbeat
-- [ ] Phase 2: Static skills as fallback for chat conversations and unmatched tasks
-- [ ] Phase 2: Implement token budget enforcement (max 9000 tokens)
-- [ ] Phase 2: Add chat keyword detection for task conversion
-- [ ] Phase 3: Implement `chain_state` tracking on tasks
-- [ ] Phase 3: Hook `research_store` tool — auto-advance chain on PROP/SPEC/DESIGN/VERIFY
-- [ ] Phase 3: Hook `task_create` tool — auto-advance chain on subtask creation
-- [ ] Phase 3: Subtask gets single atomic skill (not parent chain)
-- [ ] Phase 4: Human approval gate handling (pause + ask + wait at gate steps)
-- [ ] Phase 4: Chain switch flow (stop → re-tag → restart from appropriate phase)
-- [ ] Phase 5: Record active skills + chain + phase in assistant response metadata
-- [ ] Phase 5: Integrate `skill_metrics` for chain effectiveness tracking
-- [ ] Phase 6: Add `skill_equip` tool for mid-conversation skill loading
-- [ ] Testing: Unit tests for chain matching, phase detection, advancement
-- [ ] Testing: Integration tests for full task → chain → phase → complete flow
-- [ ] Testing: Regression tests for static skill equipping backward compatibility
+- [x] Phase 1: Create `skill_chains` table (migration 007)
+- [x] Phase 1: Add `chain_id` + `chain_state` columns to tasks table (migration 007)
+- [x] Phase 1: Create `scripts/seed-skill-chains.py` with all default chains
+- [x] Phase 1: Add `make seed-chains` command, hook into `make clean-slate`
+- [x] Phase 2: Add `match_chain()` function — tag matching + keyword fallback
+- [x] Phase 2: Modify skill loading to be task-aware (`get_skills_for_task()`)
+- [x] Phase 2: Load phase-specific skills when task is picked up via heartbeat
+- [x] Phase 2: Static skills as fallback for chat conversations and unmatched tasks
+- [x] Phase 2: Implement token budget enforcement (max 9000 tokens)
+- [x] Phase 2: Add chat keyword detection for task conversion
+- [x] Phase 3: Implement `chain_state` tracking on tasks
+- [x] Phase 3: Hook `research_store` tool — auto-advance chain on PROP/SPEC/DESIGN/VERIFY
+- [x] Phase 3: Hook `task_create` tool — auto-advance chain on subtask creation
+- [x] Phase 3: Subtask gets single atomic skill (not parent chain)
+- [x] Phase 4: Human approval gate handling (pause + ask + wait at gate steps)
+- [x] Phase 4: Chain switch flow (stop → re-tag → restart from appropriate phase)
+- [x] Phase 5: Record active skills + chain + phase in assistant response metadata
+- [x] Phase 5: Integrate `skill_metrics` for chain effectiveness tracking
+- [x] Phase 6: Add `skill_equip` tool for mid-conversation skill loading
+- [x] Testing: Unit tests for chain matching, phase detection, advancement
+- [x] Testing: Integration tests for full task → chain → phase → complete flow
+- [x] Testing: Regression tests for static skill equipping backward compatibility
 
 ### Skill Usage Recording in Conversation Metadata
 
