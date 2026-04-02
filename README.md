@@ -7,7 +7,7 @@
 
 **OpenVAIA** is a dockerized multi-agent AI platform powered by **inotagent** — a custom async Python runtime. Multiple agents can share a single container or run independently — each with its own persona, credentials, and LLM model.
 
-[Project Details](docs/project_details.md) · [Architecture](docs/project_summary.md) · [Deployment Guide](docs/plans/DRAFT__openvaia_prod_deployment.md)
+[Project Summary](docs/project_summary.md) · [Technical Specs](docs/project_specs.md) · [Deployment Guide](docs/plans/DRAFT__openvaia_prod_deployment.md)
 
 <p align="center">
   <img src="openvaia_gameui.png" alt="OpenVAIA Gamified Office UI" width="800" />
@@ -142,7 +142,7 @@ Heartbeat started for ino
 Discord connected: ino#0021
 ```
 
-Full setup guide: [Project Details](docs/project_details.md)
+Full setup guide: [Project Details](docs/project_specs.md)
 
 ## Highlights
 

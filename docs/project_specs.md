@@ -1,6 +1,6 @@
-# OpenVAIA — Project Details
+# OpenVAIA — Technical Specs
 
-Detailed setup, configuration, and usage guide. For an overview, see [README.md](../README.md).
+Setup, configuration, architecture, and technical reference. For project overview, see `project_summary.md`.
 
 ## Getting Started
 
