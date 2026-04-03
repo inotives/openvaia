@@ -19,6 +19,12 @@ Trading toolkit for Robin — CLI tools, data pollers, and backtesting engine. L
 - [x] Add `Makefile` with migrate, test, lint targets (auto-loads .env)
 - [x] Migrations verified against local Postgres — all 5 applied successfully
 
+### Phase 2: Core Libraries
+- [x] Write `core/exchange.py` — CcxtExchange (live) + PaperExchange (simulated fills at bid/ask)
+- [x] Write `core/indicators.py` — daily TA (RSI, EMA, SMA, MACD, ATR, BB, ADX, regime score) + intraday TA (RSI, EMA, VWAP, spread, volatility)
+- [x] Write `tests/test_exchange.py` (12 tests) — paper fill simulation, fee calculation, passthrough
+- [x] Write `tests/test_indicators.py` (21 tests) — all indicator columns, edge cases
+
 ### ES-0012 spec updates (same branch)
 - [x] Renamed `_usdt` → `_usd` across all column names (currency-agnostic)
 - [x] Removed CODEOWNERS references (not needed — Robin is CLI-only)
