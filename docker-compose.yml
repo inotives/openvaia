@@ -36,7 +36,7 @@ services:
     environment:
       AGENTS: ${AGENTS:-ino,robin}
       AGENT_NAME: ${AGENTS:-ino,robin}
-      PLATFORM_SCHEMA: ${PLATFORM_SCHEMA:-platform}
+      PLATFORM_SCHEMA: ${PLATFORM_SCHEMA:-openvaia}
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: ${INTERNAL_POSTGRES_PORT:-5432}
       WORKSPACE_DIR: /workspace
@@ -73,7 +73,7 @@ services:
       - agents/robin/.env
     environment:
       AGENT_NAME: robin
-      PLATFORM_SCHEMA: ${PLATFORM_SCHEMA:-platform}
+      PLATFORM_SCHEMA: ${PLATFORM_SCHEMA:-openvaia}
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: ${INTERNAL_POSTGRES_PORT:-5432}
     volumes:
@@ -108,7 +108,7 @@ services:
       - agents/ino/.env
     environment:
       AGENT_NAME: ino
-      PLATFORM_SCHEMA: ${PLATFORM_SCHEMA:-platform}
+      PLATFORM_SCHEMA: ${PLATFORM_SCHEMA:-openvaia}
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
       POSTGRES_PORT: ${INTERNAL_POSTGRES_PORT:-5432}
     volumes:

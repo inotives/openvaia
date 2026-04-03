@@ -129,7 +129,7 @@ RECURRING_TASKS = [
 def main():
     force = "--force" in sys.argv
 
-    schema = os.environ.get("PLATFORM_SCHEMA", "platform")
+    schema = os.environ.get("PLATFORM_SCHEMA", "openvaia")
 
     with psycopg.connect(
         host=os.environ["POSTGRES_HOST"],
