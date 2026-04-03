@@ -35,6 +35,7 @@ def compute_daily(df: pd.DataFrame) -> pd.DataFrame:
         result["stoch_rsi_d"] = stoch_rsi.iloc[:, 1]
 
     # Trend (moving averages)
+    result["ema_8"] = ta.ema(df["close"], length=8)
     result["ema_9"] = ta.ema(df["close"], length=9)
     result["ema_12"] = ta.ema(df["close"], length=12)
     result["ema_20"] = ta.ema(df["close"], length=20)
@@ -59,6 +60,21 @@ def compute_daily(df: pd.DataFrame) -> pd.DataFrame:
         result["bb_upper"] = bbands.iloc[:, 2]
         mid = bbands.iloc[:, 1]
         result["bb_width"] = ((result["bb_upper"] - result["bb_lower"]) / mid * 100).where(mid != 0)
+
+    # Keltner Channels (for squeeze detection)
+    kc = ta.kc(df["high"], df["low"], df["close"], length=20, scalar=1.5)
+    if kc is not None and not kc.empty:
+        result["kc_lower"] = kc.iloc[:, 0]
+        result["kc_upper"] = kc.iloc[:, 2]
+        # Squeeze: BB inside Keltner
+        if "bb_upper" in result and "bb_lower" in result:
+            result["squeeze"] = (
+                (result["bb_upper"] < result["kc_upper"]) &
+                (result["bb_lower"] > result["kc_lower"])
+            ).astype(float)
+
+    # 20-day high (for breakout detection)
+    result["high_20d"] = df["high"].rolling(20).max()
 
     # Trend strength
     adx_df = ta.adx(df["high"], df["low"], df["close"], length=14)
@@ -119,40 +135,54 @@ def compute_intraday(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _compute_regime_score(ohlcv: pd.DataFrame, indicators: pd.DataFrame) -> pd.Series:
-    """Compute a 0-100 regime score based on trend indicators.
+    """Compute a 0-100 regime score from three normalized components.
 
-    Components (each 0-20, summed to 0-100):
-    1. Price vs EMA50: above = 20, below = 0
-    2. Price vs EMA200: above = 20, below = 0
-    3. EMA50 vs EMA200 (golden/death cross): above = 20, below = 0
-    4. ADX strength: >25 = 20, 15-25 = 10, <15 = 0
-    5. MACD histogram: positive = 20, negative = 0
+    RS = (score_adx × 0.4) + (score_slope × 0.4) + (score_vol × 0.2)
+
+    Component 1: ADX(14) — trend strength (weight 0.4)
+        ADX <= 15 → 0, ADX = 25 → 50, ADX >= 40 → 100
+
+    Component 2: EMA50 slope 5d% — trend direction & velocity (weight 0.4)
+        slope <= 0% → 0, slope >= 0.5% → 100
+
+    Component 3: Volatility ratio ATR(14)/StdDev(14) — noise filter (weight 0.2, inverted)
+        ratio >= 1.2 → 0, ratio <= 0.8 → 100
     """
     score = pd.Series(0.0, index=ohlcv.index)
 
-    close = ohlcv["close"]
-    ema50 = indicators.get("ema_50")
-    ema200 = indicators.get("ema_200")
+    # Component 1: ADX normalized (piecewise linear)
     adx = indicators.get("adx_14")
-    macd_hist = indicators.get("macd_hist")
-
-    if ema50 is not None:
-        score += (close > ema50).astype(float) * 20
-    if ema200 is not None:
-        score += (close > ema200).astype(float) * 20
-    if ema50 is not None and ema200 is not None:
-        score += (ema50 > ema200).astype(float) * 20
     if adx is not None:
-        score += (adx > 25).astype(float) * 20
-        # Partial credit for moderate ADX
-        score += ((adx >= 15) & (adx <= 25)).astype(float) * 10
-        score -= ((adx >= 15) & (adx <= 25)).astype(float) * 10  # remove double count
-        # Simplified: strong = 20, moderate = 10, weak = 0
-        adx_score = pd.Series(0.0, index=ohlcv.index)
-        adx_score = adx_score.where(adx < 15, 10.0)
-        adx_score = adx_score.where(adx < 25, 20.0)
-        score = score - ((adx > 25).astype(float) * 20) + adx_score  # replace simple logic
-    if macd_hist is not None:
-        score += (macd_hist > 0).astype(float) * 20
+        score_adx = pd.Series(0.0, index=ohlcv.index)
+        mask_mid = (adx > 15) & (adx < 25)
+        mask_high = (adx >= 25) & (adx < 40)
+        mask_max = adx >= 40
+
+        score_adx = score_adx.where(~mask_mid, (adx - 15) / 10 * 50)
+        score_adx = score_adx.where(~mask_high, 50 + (adx - 25) / 15 * 50)
+        score_adx = score_adx.where(~mask_max, 100.0)
+    else:
+        score_adx = pd.Series(0.0, index=ohlcv.index)
+
+    # Component 2: EMA50 slope over 5 days (%)
+    ema50 = indicators.get("ema_50")
+    if ema50 is not None:
+        ema50_5d_ago = ema50.shift(5)
+        slope_pct = ((ema50 - ema50_5d_ago) / ema50_5d_ago * 100).fillna(0)
+        score_slope = (slope_pct / 0.5 * 100).clip(0, 100)
+    else:
+        score_slope = pd.Series(0.0, index=ohlcv.index)
+
+    # Component 3: Volatility ratio (inverted — low noise = high score)
+    atr = indicators.get("atr_14")
+    if atr is not None:
+        std_dev = ohlcv["close"].rolling(14).std()
+        vol_ratio = (atr / std_dev).where(std_dev > 0, 1.0)
+        score_vol = ((1.2 - vol_ratio) / 0.4 * 100).clip(0, 100)
+    else:
+        score_vol = pd.Series(0.0, index=ohlcv.index)
+
+    # Weighted composite
+    score = score_adx * 0.4 + score_slope * 0.4 + score_vol * 0.2
 
     return score.clip(0, 100)

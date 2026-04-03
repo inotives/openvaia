@@ -43,6 +43,7 @@ def _run_backtest(
                    i.sma_50, i.sma_200, i.macd, i.macd_signal, i.macd_hist,
                    i.atr_14, i.bb_upper, i.bb_lower, i.bb_width, i.adx_14,
                    i.obv, i.volume_sma_20, i.volume_ratio, i.regime_score,
+                   i.custom,
                    d.open, d.high, d.low, d.close, d.volume
             FROM {s}.indicators_daily i
             JOIN {s}.ohlcv_daily d ON d.asset_id = i.asset_id AND d.date = i.date
@@ -63,6 +64,7 @@ def _run_backtest(
     cash = float(initial_capital)
     position_qty = 0.0
     entry_price = 0.0
+    highest_since_entry = 0.0
     trades = []
     equity_curve = []
     peak_value = float(initial_capital)
@@ -76,7 +78,28 @@ def _run_backtest(
 
     for i, day in enumerate(days):
         indicators = {k: float(v) if v is not None else None for k, v in day.items()
-                      if k not in ("date", "open", "high", "low", "close", "volume")}
+                      if k not in ("date", "open", "high", "low", "volume", "custom")}
+        # Merge custom JSONB into indicators
+        custom = day.get("custom")
+        if custom and isinstance(custom, dict):
+            for k, v in custom.items():
+                if v is not None:
+                    indicators[k] = float(v)
+        # Keep close in indicators — strategies like Bollinger need it
+        # Add 5-day high for trend following breakout detection
+        if i >= 5:
+            indicators["high_5d"] = max(float(days[j]["high"]) for j in range(i - 5, i))
+        # Add N-day ago values for RSI divergence detection
+        lookback = 5
+        if i >= lookback:
+            prev = days[i - lookback]
+            indicators["close_prev_n"] = float(prev["close"]) if prev["close"] else None
+            indicators["rsi_14_prev_n"] = float(prev["rsi_14"]) if prev.get("rsi_14") else None
+            indicators["rsi_14_prev"] = float(days[i - 1]["rsi_14"]) if days[i - 1].get("rsi_14") else None
+        # Track highest price since entry for trailing stop
+        if position_qty > 0:
+            highest_since_entry = max(highest_since_entry, float(day["high"]))
+            indicators["highest_since_entry"] = highest_since_entry
         close = float(day["close"])
         high = float(day["high"])
         low = float(day["low"])
@@ -115,7 +138,7 @@ def _run_backtest(
                     "entry_price": entry_price,
                     "exit_date": str(day["date"]),
                     "exit_price": fill_price,
-                    "exit_reason": exit_signal.reasons[0] if exit_signal.reasons else "signal",
+                    "exit_reason": (exit_signal.reasons[0] if exit_signal.reasons else "signal")[:32],
                     "side": "sell",
                     "quantity": position_qty,
                     "cost_basis_usd": cost_basis,
@@ -126,6 +149,7 @@ def _run_backtest(
                 })
                 position_qty = 0.0
                 entry_price = 0.0
+                highest_since_entry = 0.0
 
         # Evaluate entry signal (only if no position)
         if position_qty == 0:
@@ -142,6 +166,7 @@ def _run_backtest(
                     cash -= trade_amount + fees
                     position_qty = quantity
                     entry_price = fill_price
+                    highest_since_entry = fill_price
 
                     trade_num += 1
                     trades.append({

@@ -97,8 +97,18 @@ def cmd_scan(args):
     s = schema()
     signals = []
     no_signal = []
+    filters_blocked = []
 
     with sync_connect() as conn:
+        # Check portfolio-level filters
+        from core.filters import check_btc_filter, check_portfolio_drawdown
+        btc_block = check_btc_filter(conn, s)
+        dd_block = check_portfolio_drawdown(conn, s)
+        if btc_block:
+            filters_blocked.append(btc_block)
+        if dd_block:
+            filters_blocked.append(dd_block)
+
         # Load active strategies
         cur = conn.execute(
             f"""SELECT s.id, s.name, s.type, s.params, s.paper_mode,
@@ -184,7 +194,13 @@ def cmd_scan(args):
                     "reason": f"Low confidence ({confidence:.2f})" if reasons else "No conditions met",
                 })
 
-    output({"signals": signals, "no_signal": no_signal})
+    # If filters blocked, move all signals to blocked
+    if filters_blocked:
+        for sig in signals:
+            sig["blocked_by"] = filters_blocked
+        output({"signals": [], "blocked": signals, "no_signal": no_signal, "filters": filters_blocked})
+    else:
+        output({"signals": signals, "no_signal": no_signal, "filters": []})
 
 
 def cmd_check(args):

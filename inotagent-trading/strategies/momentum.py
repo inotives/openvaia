@@ -113,9 +113,20 @@ class MomentumStrategy(BaseStrategy):
         )
 
 
-# Registry of strategy types
+# Registry of strategy types — import here to keep get_strategy() as single entry point
+from strategies.bollinger import BollingerStrategy
+from strategies.trend_follow import TrendFollowStrategy
+from strategies.volatility_breakout import VolatilityBreakoutStrategy
+from strategies.mean_reversion import MeanReversionStrategy
+from strategies.rsi_divergence import RSIDivergenceStrategy
+
 STRATEGY_REGISTRY: dict[str, type[BaseStrategy]] = {
     "momentum": MomentumStrategy,
+    "bollinger": BollingerStrategy,
+    "trend_follow": TrendFollowStrategy,
+    "volatility_breakout": VolatilityBreakoutStrategy,
+    "mean_reversion": MeanReversionStrategy,
+    "rsi_divergence": RSIDivergenceStrategy,
 }
 
 

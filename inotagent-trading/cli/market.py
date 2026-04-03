@@ -362,6 +362,7 @@ def cmd_backfill_daily_ta(args):
 
         indicators = compute_daily(df)
 
+        # Standard columns (typed DB columns)
         cols = [
             "rsi_14", "rsi_7", "stoch_rsi_k", "stoch_rsi_d",
             "ema_9", "ema_12", "ema_20", "ema_26", "ema_50", "ema_200",
@@ -372,6 +373,8 @@ def cmd_backfill_daily_ta(args):
             "obv", "volume_sma_20", "volume_ratio",
             "regime_score",
         ]
+        # Extra columns stored in custom JSONB (extensible, no migration needed)
+        custom_cols = ["ema_8", "kc_upper", "kc_lower", "squeeze", "high_20d"]
 
         count = 0
         for i, row in indicators.iterrows():
@@ -384,14 +387,23 @@ def cmd_backfill_daily_ta(args):
                 else:
                     values.append(None)
 
+            # Build custom JSONB
+            custom = {}
+            for col in custom_cols:
+                val = row.get(col)
+                if pd.notna(val):
+                    custom[col] = round(float(val), 8)
+            values.append(json.dumps(custom) if custom else "{}")
+
+            all_cols = cols + ["custom"]
             placeholders = ", ".join(f"%s" for _ in values)
-            col_names = "asset_id, date, " + ", ".join(cols)
+            col_names = "asset_id, date, " + ", ".join(all_cols)
 
             conn.execute(
                 f"""INSERT INTO {s}.indicators_daily ({col_names})
                     VALUES ({placeholders})
                     ON CONFLICT (asset_id, date) DO UPDATE SET
-                        {', '.join(f'{c} = EXCLUDED.{c}' for c in cols)}
+                        {', '.join(f'{c} = EXCLUDED.{c}' for c in all_cols)}
                 """,
                 values,
             )
