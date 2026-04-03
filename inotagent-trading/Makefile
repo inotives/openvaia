@@ -4,27 +4,13 @@ ifneq (,$(wildcard .env))
 	export
 endif
 
-.PHONY: install sync migrate migrate-down migrate-status test lint format
+.PHONY: install sync test lint format
 
 # Setup
 install:
 	uv sync
 
 sync: install
-
-# Database
-migrate:
-	uv run dbmate -d db/migrations up
-
-migrate-down:
-	uv run dbmate -d db/migrations down
-
-migrate-status:
-	uv run dbmate -d db/migrations status
-
-migrate-new:
-	@read -p "Migration name: " name; \
-	uv run dbmate -d db/migrations new $$name
 
 # Testing
 test:
@@ -37,3 +23,6 @@ lint:
 
 format:
 	uv run ruff format .
+
+# Migrations are managed from the repo root:
+#   make trading-migrate  (from repo root)

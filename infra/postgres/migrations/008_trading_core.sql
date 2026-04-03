@@ -86,9 +86,11 @@ CREATE TABLE trading_platform.asset_mappings (
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     updated_by VARCHAR(64),
     deleted_at TIMESTAMPTZ,
-    deleted_by VARCHAR(64),
-    UNIQUE (asset_id, venue_id, COALESCE(network_id, 0))
+    deleted_by VARCHAR(64)
 );
+
+CREATE UNIQUE INDEX idx_asset_mappings_unique
+    ON trading_platform.asset_mappings (asset_id, venue_id, COALESCE(network_id, 0));
 
 -- Trading pairs per venue -- fees, precision can change over time
 -- Audit: SCD Type 2

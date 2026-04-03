@@ -13,9 +13,11 @@ CREATE TABLE trading_platform.accounts (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     created_by VARCHAR(64) DEFAULT 'system',
     deleted_at TIMESTAMPTZ,
-    deleted_by VARCHAR(64),
-    UNIQUE (venue_id, name, COALESCE(address, ''), COALESCE(network_id, 0))
+    deleted_by VARCHAR(64)
 );
+
+CREATE UNIQUE INDEX idx_accounts_unique
+    ON trading_platform.accounts (venue_id, name, COALESCE(address, ''), COALESCE(network_id, 0));
 
 -- Asset balances per account (live — synced from exchanges by private poller)
 CREATE TABLE trading_platform.balances (

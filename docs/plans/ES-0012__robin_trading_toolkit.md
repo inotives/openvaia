@@ -79,12 +79,12 @@ Agent (Robin) interaction — CLI only, no git operations:
 | HTTP client | requests |
 | Database | asyncpg (poller — async), psycopg (CLI — sync). `core/db.py` provides both `async_pool()` and `sync_connect()` |
 | Config | pydantic-settings (.env) |
-| Migrations | dbmate (`inotagent-trading/db/migrations/`) |
+| Migrations | dbmate (`infra/postgres/migrations/` — shared with openvaia, 008-012) |
 | Scheduling | asyncio (poller loop) |
 
 ## Project Structure
 
-Lives under `inotagent-trading/` in the openvaia monorepo root. Migrations are self-contained in `inotagent-trading/db/migrations/` (separate schema, separate lifecycle).
+Lives under `inotagent-trading/` in the openvaia monorepo root. Migrations are in the shared `infra/postgres/migrations/` (008-012, `trading_platform` schema).
 
 ```
 openvaia/                              ← monorepo root
@@ -131,18 +131,7 @@ openvaia/                              ← monorepo root
 │   │   ├── base.py                    # Abstract interface
 │   │   └── momentum.py              # Initial strategy
 │   │
-│   ├── db/migrations/                 # trading_platform schema migrations
-│   │   ├── 001_trading_core.sql       # schema, venues, networks, network_mappings, assets, asset_mappings,
-│   │   │                              #   trading_pairs, ohlcv_1m, ohlcv_daily, indicators_intraday,
-│   │   │                              #   indicators_daily, ohlcv_1h/4h views, strategies, ext_coingecko_*
-│   │   ├── 002_trading_accounts.sql   # accounts, balances, balances_ledger, transfers,
-│   │   │                              #   total_balances view, balance_reconciliation view
-│   │   ├── 003_trading_orders.sql     # orders, order_events, executions
-│   │   ├── 004_trading_portfolio.sql  # portfolio_snapshots, portfolio_asset_snapshots,
-│   │   │                              #   portfolio_strategy_snapshots, pnl_realized, cost_basis,
-│   │   │                              #   paper_balances, trade_journal, open_positions view
-│   │   └── 005_trading_backtest.sql   # backtest_runs, backtest_trades, backtest_equity
-│   │
+│   │   # Migrations in infra/postgres/migrations/ (008-012)
 │   ├── data/seeds/                    # CSV files for historical data (gitignored)
 │   │
 │   └── tests/

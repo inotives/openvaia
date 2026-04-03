@@ -1,10 +1,10 @@
 -- migrate:up
 
 -- Task key sequence
-CREATE SEQUENCE IF NOT EXISTS platform.task_key_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS openvaia.task_key_seq START 1;
 
 -- Agent repo assignments
-CREATE TABLE IF NOT EXISTS platform.agent_repos (
+CREATE TABLE IF NOT EXISTS openvaia.agent_repos (
     id          SERIAL PRIMARY KEY,
     agent_name  VARCHAR(64) NOT NULL,
     repo_url    TEXT NOT NULL,
@@ -15,10 +15,10 @@ CREATE TABLE IF NOT EXISTS platform.agent_repos (
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_repos_agent
-    ON platform.agent_repos (agent_name);
+    ON openvaia.agent_repos (agent_name);
 
 -- Task management
-CREATE TABLE IF NOT EXISTS platform.tasks (
+CREATE TABLE IF NOT EXISTS openvaia.tasks (
     id                  SERIAL PRIMARY KEY,
     key                 VARCHAR(16) NOT NULL UNIQUE,
     title               TEXT NOT NULL,
@@ -31,8 +31,8 @@ CREATE TABLE IF NOT EXISTS platform.tasks (
     created_by          VARCHAR(64),
     result              TEXT,
     tags                TEXT[] NOT NULL DEFAULT '{}',
-    parent_task_id      INT REFERENCES platform.tasks(id) ON DELETE SET NULL,
-    repo_id             INT REFERENCES platform.agent_repos(id) ON DELETE SET NULL,
+    parent_task_id      INT REFERENCES openvaia.tasks(id) ON DELETE SET NULL,
+    repo_id             INT REFERENCES openvaia.agent_repos(id) ON DELETE SET NULL,
     recurrence_minutes  INT,
     recurrence_count    INT NOT NULL DEFAULT 0,
     schedule_at         TIME,
@@ -42,22 +42,22 @@ CREATE TABLE IF NOT EXISTS platform.tasks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_status
-    ON platform.tasks (status);
+    ON openvaia.tasks (status);
 
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_status
-    ON platform.tasks (assigned_to, status);
+    ON openvaia.tasks (assigned_to, status);
 
 CREATE INDEX IF NOT EXISTS idx_tasks_priority
-    ON platform.tasks (priority);
+    ON openvaia.tasks (priority);
 
 CREATE INDEX IF NOT EXISTS idx_tasks_tags
-    ON platform.tasks USING GIN (tags);
+    ON openvaia.tasks USING GIN (tags);
 
 CREATE INDEX IF NOT EXISTS idx_tasks_recurring
-    ON platform.tasks (recurrence_minutes) WHERE recurrence_minutes IS NOT NULL;
+    ON openvaia.tasks (recurrence_minutes) WHERE recurrence_minutes IS NOT NULL;
 
 -- migrate:down
 
-DROP TABLE IF EXISTS platform.tasks;
-DROP TABLE IF EXISTS platform.agent_repos;
-DROP SEQUENCE IF EXISTS platform.task_key_seq;
+DROP TABLE IF EXISTS openvaia.tasks;
+DROP TABLE IF EXISTS openvaia.agent_repos;
+DROP SEQUENCE IF EXISTS openvaia.task_key_seq;

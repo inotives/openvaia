@@ -210,18 +210,8 @@ local-install:
 
 # Run DB migrations locally (requires dbmate)
 local-migrate:
-	@SCHEMA=$${PLATFORM_SCHEMA:-openvaia}; \
-	MIGRATION_DIR=$$(mktemp -d); \
-	cp infra/postgres/migrations/*.sql "$$MIGRATION_DIR/"; \
-	if [ "$$SCHEMA" != "platform" ]; then \
-		sed -i.bak "s/CREATE SCHEMA IF NOT EXISTS platform/CREATE SCHEMA IF NOT EXISTS $$SCHEMA/g" "$$MIGRATION_DIR"/*.sql; \
-		sed -i.bak "s/DROP SCHEMA IF EXISTS platform/DROP SCHEMA IF EXISTS $$SCHEMA/g" "$$MIGRATION_DIR"/*.sql; \
-		sed -i.bak "s/platform\./$$SCHEMA./g" "$$MIGRATION_DIR"/*.sql; \
-		rm -f "$$MIGRATION_DIR"/*.bak; \
-	fi; \
-	DB_URL="postgresql://inotives:$$(grep POSTGRES_PASSWORD .env | cut -d= -f2)@localhost:$${EXTERNAL_POSTGRES_PORT:-5445}/inotives?sslmode=disable"; \
-	dbmate -d "$$MIGRATION_DIR" --url "$$DB_URL" --no-dump-schema up; \
-	rm -rf "$$MIGRATION_DIR"
+	@DB_URL="postgresql://inotives:$$(grep POSTGRES_PASSWORD .env | cut -d= -f2)@localhost:$${EXTERNAL_POSTGRES_PORT:-5445}/inotives?sslmode=disable"; \
+	uv run dbmate -d infra/postgres/migrations --url "$$DB_URL" --no-dump-schema up
 
 # Full local setup: install + migrate + import skills + seed tasks + seed chains
 local-setup: local-install local-migrate import-skills seed-tasks seed-chains
@@ -290,8 +280,7 @@ trading-status:
 trading-logs:
 	docker compose logs --tail=40 poller-public poller-private poller-ta
 
-trading-migrate:
-	cd inotagent-trading && make migrate
+trading-migrate: local-migrate
 
 trading-seed:
 	@echo "TODO: seed assets, venues, mappings, historical OHLCV"

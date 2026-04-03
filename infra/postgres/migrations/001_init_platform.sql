@@ -1,9 +1,9 @@
 -- migrate:up
 
-CREATE SCHEMA IF NOT EXISTS platform;
+CREATE SCHEMA IF NOT EXISTS openvaia;
 
 -- Agents registry
-CREATE TABLE IF NOT EXISTS platform.agents (
+CREATE TABLE IF NOT EXISTS openvaia.agents (
     name        VARCHAR(64) PRIMARY KEY,
     role        VARCHAR(128) NOT NULL DEFAULT '',
     status      VARCHAR(16) NOT NULL DEFAULT 'offline',
@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS platform.agents (
 );
 
 -- Communication spaces
-CREATE TABLE IF NOT EXISTS platform.spaces (
+CREATE TABLE IF NOT EXISTS openvaia.spaces (
     id          SERIAL PRIMARY KEY,
     name        VARCHAR(64) NOT NULL UNIQUE,
     type        VARCHAR(16) NOT NULL CHECK (type IN ('public', 'tasks', 'room', 'direct')),
@@ -20,29 +20,29 @@ CREATE TABLE IF NOT EXISTS platform.spaces (
 );
 
 -- Space membership
-CREATE TABLE IF NOT EXISTS platform.space_members (
-    space_id    INT NOT NULL REFERENCES platform.spaces(id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS openvaia.space_members (
+    space_id    INT NOT NULL REFERENCES openvaia.spaces(id) ON DELETE CASCADE,
     agent_name  VARCHAR(64) NOT NULL,
     UNIQUE (space_id, agent_name)
 );
 
 -- Platform messages
-CREATE TABLE IF NOT EXISTS platform.messages (
+CREATE TABLE IF NOT EXISTS openvaia.messages (
     id          BIGSERIAL PRIMARY KEY,
     from_agent  VARCHAR(64) NOT NULL,
-    space_id    INT NOT NULL REFERENCES platform.spaces(id) ON DELETE CASCADE,
+    space_id    INT NOT NULL REFERENCES openvaia.spaces(id) ON DELETE CASCADE,
     body        TEXT NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_space_created
-    ON platform.messages (space_id, created_at DESC);
+    ON openvaia.messages (space_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_messages_from_agent
-    ON platform.messages (from_agent);
+    ON openvaia.messages (from_agent);
 
 -- Agent health status
-CREATE TABLE IF NOT EXISTS platform.agent_status (
+CREATE TABLE IF NOT EXISTS openvaia.agent_status (
     id               BIGSERIAL PRIMARY KEY,
     agent_name       VARCHAR(64) NOT NULL,
     healthy          BOOLEAN DEFAULT true,
@@ -51,10 +51,10 @@ CREATE TABLE IF NOT EXISTS platform.agent_status (
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_status_name_checked
-    ON platform.agent_status (agent_name, checked_at DESC);
+    ON openvaia.agent_status (agent_name, checked_at DESC);
 
 -- Platform key-value config
-CREATE TABLE IF NOT EXISTS platform.config (
+CREATE TABLE IF NOT EXISTS openvaia.config (
     key         VARCHAR(128) PRIMARY KEY,
     value       TEXT NOT NULL DEFAULT '',
     description TEXT,
@@ -63,10 +63,10 @@ CREATE TABLE IF NOT EXISTS platform.config (
 
 -- migrate:down
 
-DROP TABLE IF EXISTS platform.config;
-DROP TABLE IF EXISTS platform.agent_status;
-DROP TABLE IF EXISTS platform.messages;
-DROP TABLE IF EXISTS platform.space_members;
-DROP TABLE IF EXISTS platform.spaces;
-DROP TABLE IF EXISTS platform.agents;
-DROP SCHEMA IF EXISTS platform;
+DROP TABLE IF EXISTS openvaia.config;
+DROP TABLE IF EXISTS openvaia.agent_status;
+DROP TABLE IF EXISTS openvaia.messages;
+DROP TABLE IF EXISTS openvaia.space_members;
+DROP TABLE IF EXISTS openvaia.spaces;
+DROP TABLE IF EXISTS openvaia.agents;
+DROP SCHEMA IF EXISTS openvaia;

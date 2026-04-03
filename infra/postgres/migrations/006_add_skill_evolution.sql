@@ -1,9 +1,9 @@
 -- migrate:up
 
 -- Skill quality metrics — tracks how well each skill performs per agent
-CREATE TABLE IF NOT EXISTS ${SCHEMA}.skill_metrics (
+CREATE TABLE IF NOT EXISTS openvaia.skill_metrics (
     id BIGSERIAL PRIMARY KEY,
-    skill_id INT NOT NULL REFERENCES ${SCHEMA}.skills(id) ON DELETE CASCADE,
+    skill_id INT NOT NULL REFERENCES openvaia.skills(id) ON DELETE CASCADE,
     agent_name VARCHAR(64) NOT NULL,
     times_selected INT DEFAULT 0,       -- times skill was in system prompt for a task
     times_applied INT DEFAULT 0,        -- times agent actually used the skill
@@ -16,14 +16,14 @@ CREATE TABLE IF NOT EXISTS ${SCHEMA}.skill_metrics (
 );
 
 CREATE INDEX IF NOT EXISTS idx_skill_metrics_agent
-    ON ${SCHEMA}.skill_metrics(agent_name);
+    ON openvaia.skill_metrics(agent_name);
 CREATE INDEX IF NOT EXISTS idx_skill_metrics_skill
-    ON ${SCHEMA}.skill_metrics(skill_id);
+    ON openvaia.skill_metrics(skill_id);
 
 -- Skill versions — immutable version history with lineage tracking
-CREATE TABLE IF NOT EXISTS ${SCHEMA}.skill_versions (
+CREATE TABLE IF NOT EXISTS openvaia.skill_versions (
     id BIGSERIAL PRIMARY KEY,
-    skill_id INT NOT NULL REFERENCES ${SCHEMA}.skills(id) ON DELETE CASCADE,
+    skill_id INT NOT NULL REFERENCES openvaia.skills(id) ON DELETE CASCADE,
     version INT NOT NULL DEFAULT 1,
     origin VARCHAR(16) NOT NULL DEFAULT 'imported',
         -- imported: from file import
@@ -41,12 +41,12 @@ CREATE TABLE IF NOT EXISTS ${SCHEMA}.skill_versions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_skill_versions_skill_active
-    ON ${SCHEMA}.skill_versions(skill_id, is_active);
+    ON openvaia.skill_versions(skill_id, is_active);
 
 -- Evolution proposals — agents suggest skill changes, humans approve
-CREATE TABLE IF NOT EXISTS ${SCHEMA}.skill_evolution_proposals (
+CREATE TABLE IF NOT EXISTS openvaia.skill_evolution_proposals (
     id BIGSERIAL PRIMARY KEY,
-    skill_id INT REFERENCES ${SCHEMA}.skills(id) ON DELETE SET NULL,
+    skill_id INT REFERENCES openvaia.skills(id) ON DELETE SET NULL,
         -- NULL for CAPTURED (new skill, no existing skill_id yet)
     evolution_type VARCHAR(16) NOT NULL,
         -- fix, derived, captured
@@ -67,19 +67,19 @@ CREATE TABLE IF NOT EXISTS ${SCHEMA}.skill_evolution_proposals (
 );
 
 CREATE INDEX IF NOT EXISTS idx_evolution_proposals_status
-    ON ${SCHEMA}.skill_evolution_proposals(status);
+    ON openvaia.skill_evolution_proposals(status);
 CREATE INDEX IF NOT EXISTS idx_evolution_proposals_skill
-    ON ${SCHEMA}.skill_evolution_proposals(skill_id);
+    ON openvaia.skill_evolution_proposals(skill_id);
 
 -- Seed initial versions for all existing skills
-INSERT INTO ${SCHEMA}.skill_versions (skill_id, version, origin, generation, content_snapshot, is_active, created_by)
+INSERT INTO openvaia.skill_versions (skill_id, version, origin, generation, content_snapshot, is_active, created_by)
 SELECT id, 1, 'imported', 0, content, true, 'system'
-FROM ${SCHEMA}.skills
+FROM openvaia.skills
 WHERE NOT EXISTS (
-    SELECT 1 FROM ${SCHEMA}.skill_versions sv WHERE sv.skill_id = skills.id
+    SELECT 1 FROM openvaia.skill_versions sv WHERE sv.skill_id = skills.id
 );
 
 -- migrate:down
-DROP TABLE IF EXISTS ${SCHEMA}.skill_evolution_proposals;
-DROP TABLE IF EXISTS ${SCHEMA}.skill_versions;
-DROP TABLE IF EXISTS ${SCHEMA}.skill_metrics;
+DROP TABLE IF EXISTS openvaia.skill_evolution_proposals;
+DROP TABLE IF EXISTS openvaia.skill_versions;
+DROP TABLE IF EXISTS openvaia.skill_metrics;

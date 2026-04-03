@@ -1,7 +1,7 @@
 -- migrate:up
 
 -- Skill chains — ordered sequences of skills for task types
-CREATE TABLE IF NOT EXISTS ${SCHEMA}.skill_chains (
+CREATE TABLE IF NOT EXISTS openvaia.skill_chains (
     id SERIAL PRIMARY KEY,
     name VARCHAR(64) NOT NULL UNIQUE,
     description TEXT,
@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS ${SCHEMA}.skill_chains (
 );
 
 -- Add chain tracking to tasks
-ALTER TABLE ${SCHEMA}.tasks
-    ADD COLUMN IF NOT EXISTS chain_id INT REFERENCES ${SCHEMA}.skill_chains(id),
+ALTER TABLE openvaia.tasks
+    ADD COLUMN IF NOT EXISTS chain_id INT REFERENCES openvaia.skill_chains(id),
     ADD COLUMN IF NOT EXISTS chain_state JSONB;
 -- chain_state format:
 -- {
@@ -30,11 +30,11 @@ ALTER TABLE ${SCHEMA}.tasks
 -- }
 
 CREATE INDEX IF NOT EXISTS idx_skill_chains_active
-    ON ${SCHEMA}.skill_chains(is_active);
+    ON openvaia.skill_chains(is_active);
 CREATE INDEX IF NOT EXISTS idx_tasks_chain
-    ON ${SCHEMA}.tasks(chain_id) WHERE chain_id IS NOT NULL;
+    ON openvaia.tasks(chain_id) WHERE chain_id IS NOT NULL;
 
 -- migrate:down
-ALTER TABLE ${SCHEMA}.tasks DROP COLUMN IF EXISTS chain_state;
-ALTER TABLE ${SCHEMA}.tasks DROP COLUMN IF EXISTS chain_id;
-DROP TABLE IF EXISTS ${SCHEMA}.skill_chains;
+ALTER TABLE openvaia.tasks DROP COLUMN IF EXISTS chain_state;
+ALTER TABLE openvaia.tasks DROP COLUMN IF EXISTS chain_id;
+DROP TABLE IF EXISTS openvaia.skill_chains;
