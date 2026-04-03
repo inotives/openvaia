@@ -50,6 +50,14 @@ Trading toolkit for Robin — CLI tools, data pollers, and backtesting engine. L
 - [x] Fixed COALESCE in UNIQUE constraints → CREATE UNIQUE INDEX
 - [x] Simplified `local-migrate` Makefile target
 
+### Phase 5: Backtest + Strategies (partial)
+- [x] Write `strategies/base.py` — abstract interface with evaluate_signal() + should_exit()
+- [x] Write `strategies/momentum.py` — RSI/EMA/ADX/volume/regime weighted confidence scoring
+- [x] Write `cli/backtest.py` — run (single), sweep (param grid), list, view + DB persistence
+- [ ] Seed initial data (assets, venues, mappings, historical OHLCV) — needs CSV download
+- [ ] Bake toolkit into agent Docker image — deferred to deployment phase
+- [ ] Create trading skills for Robin — deferred to when Robin is ready to trade
+
 ### ES-0012 spec updates (same branch)
 - [x] Renamed `_usdt` → `_usd` across all column names (currency-agnostic)
 - [x] Removed CODEOWNERS references (not needed — Robin is CLI-only)
