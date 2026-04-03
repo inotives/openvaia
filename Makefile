@@ -1,4 +1,4 @@
-.PHONY: deploy deploy-all start stop restart down ps logs ui ui-logs ui-dev ui-dev-restart ui-dev-stop ui-dev-build shell test bootstrap build build-base task-list task-get task-create task-update task-summary task-board repo-list repo-add repo-remove repo-agent inotagent-test
+.PHONY: deploy deploy-all start stop restart down ps logs ui ui-logs ui-dev ui-dev-restart ui-dev-stop ui-dev-build shell test bootstrap build build-base task-list task-get task-create task-update task-summary task-board repo-list repo-add repo-remove repo-agent inotagent-test trading-start trading-stop trading-status trading-logs trading-build trading-migrate trading-seed trading-test
 
 build-base:
 	docker build -f inotagent/Dockerfile -t inotagent-base .
@@ -272,3 +272,29 @@ create-agent:
 
 bootstrap:
 	./scripts/bootstrap.sh
+
+# ─── Trading Toolkit ───────────────────────────────────────────
+
+trading-build:
+	docker compose build poller-public poller-private poller-ta
+
+trading-start:
+	docker compose --profile trading up -d
+
+trading-stop:
+	docker compose --profile trading stop
+
+trading-status:
+	cd inotagent-trading && uv run python -c "import json; print(json.dumps(json.load(open('.poller_status.json')), indent=2))" 2>/dev/null || echo "No poller status file"
+
+trading-logs:
+	docker compose logs --tail=40 poller-public poller-private poller-ta
+
+trading-migrate:
+	cd inotagent-trading && make migrate
+
+trading-seed:
+	@echo "TODO: seed assets, venues, mappings, historical OHLCV"
+
+trading-test:
+	cd inotagent-trading && make test

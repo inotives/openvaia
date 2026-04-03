@@ -161,6 +161,58 @@ services:
           cpus: "0.5"
           memory: 512m
 
+  # Trading pollers — start with: make trading-start
+  poller-public:
+    build:
+      context: ./inotagent-trading
+    command: python -m poller.public
+    container_name: openvaia_poller_public
+    profiles: ["trading"]
+    env_file: ./inotagent-trading/.env
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${INTERNAL_POSTGRES_PORT:-5432}
+    networks: [platform]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  poller-private:
+    build:
+      context: ./inotagent-trading
+    command: python -m poller.private
+    container_name: openvaia_poller_private
+    profiles: ["trading"]
+    env_file: ./inotagent-trading/.env
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${INTERNAL_POSTGRES_PORT:-5432}
+    networks: [platform]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  poller-ta:
+    build:
+      context: ./inotagent-trading
+    command: python -m poller.ta
+    container_name: openvaia_poller_ta
+    profiles: ["trading"]
+    env_file: ./inotagent-trading/.env
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${INTERNAL_POSTGRES_PORT:-5432}
+    networks: [platform]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
 networks:
   platform:
     driver: bridge

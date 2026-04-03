@@ -25,6 +25,15 @@ Trading toolkit for Robin — CLI tools, data pollers, and backtesting engine. L
 - [x] Write `tests/test_exchange.py` (12 tests) — paper fill simulation, fee calculation, passthrough
 - [x] Write `tests/test_indicators.py` (21 tests) — all indicator columns, edge cases
 
+### Phase 3: Pollers
+- [x] Write `poller/base.py` — retry with exponential backoff (1s/4s/16s), health heartbeat to JSON file, cycle timing
+- [x] Write `poller/public/` — fetches 1m OHLCV + ticker (bid/ask/spread) for all active pairs
+- [x] Write `poller/private/` — syncs balances, detects order fills, anomaly checks (consecutive losses, daily loss)
+- [x] Write `poller/ta/` — intraday TA from 1m candles, daily TA (once/day), paper stop-loss monitoring, ohlcv_1m pruning
+- [x] Add Docker Compose services (poller-public, poller-private, poller-ta) with `trading` profile
+- [x] Add root Makefile targets: `trading-start`, `trading-stop`, `trading-status`, `trading-logs`, `trading-migrate`, `trading-test`
+- [x] Write `tests/test_poller.py` (8 tests) — retry logic, health heartbeat, run loop
+
 ### ES-0012 spec updates (same branch)
 - [x] Renamed `_usdt` → `_usd` across all column names (currency-agnostic)
 - [x] Removed CODEOWNERS references (not needed — Robin is CLI-only)
