@@ -20,6 +20,7 @@ __pycache__/
 # Node
 node_modules/
 .next/
+*.tsbuildinfo
 
 # Docker
 postgres_data/
