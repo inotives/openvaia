@@ -281,7 +281,7 @@ def _run_backtest(
                 run_id, t["trade_num"], t.get("entry_date"), t.get("entry_price"),
                 t.get("entry_signal_confidence"),
                 json.dumps(t.get("entry_reasons")) if t.get("entry_reasons") else None,
-                t.get("exit_date"), t.get("exit_price"), t.get("exit_reason"),
+                t.get("exit_date"), t.get("exit_price"), (t.get("exit_reason") or "")[:32],
                 "sell", t["quantity"],
                 Decimal(str(t.get("cost_basis_usd", 0))),
                 Decimal(str(t.get("proceeds_usd", 0))),

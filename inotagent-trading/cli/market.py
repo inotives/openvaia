@@ -271,13 +271,23 @@ def cmd_seed_daily(args):
         venue_id = venue["id"]
 
         count = 0
-        with open(filepath, newline="") as f:
-            reader = csv.DictReader(f)
+        with open(filepath, newline="", encoding="utf-8-sig") as f:
+            # Auto-detect delimiter (CoinMarketCap uses semicolons)
+            sample = f.read(1024)
+            f.seek(0)
+            delimiter = ";" if ";" in sample.split("\n")[0] else ","
+            reader = csv.DictReader(f, delimiter=delimiter)
+
             for row in reader:
-                # Support CoinMarketCap CSV format
+                # Support CoinMarketCap CSV format (timeOpen) and generic (date)
                 dt = row.get("timeOpen", row.get("date", ""))[:10]
                 if not dt:
                     continue
+
+                def _dec(val: str | None) -> Decimal | None:
+                    if not val:
+                        return None
+                    return Decimal(val.strip().strip('"').replace(",", ""))
 
                 conn.execute(
                     f"""INSERT INTO {s}.ohlcv_daily
@@ -286,12 +296,12 @@ def cmd_seed_daily(args):
                         ON CONFLICT (asset_id, venue_id, date) DO NOTHING""",
                     (
                         asset_id, venue_id, dt,
-                        Decimal(row.get("open", "0").replace(",", "")),
-                        Decimal(row.get("high", "0").replace(",", "")),
-                        Decimal(row.get("low", "0").replace(",", "")),
-                        Decimal(row.get("close", "0").replace(",", "")),
-                        Decimal(row.get("volume", "0").replace(",", "")),
-                        Decimal(row["marketCap"].replace(",", "")) if row.get("marketCap") else None,
+                        _dec(row.get("open")),
+                        _dec(row.get("high")),
+                        _dec(row.get("low")),
+                        _dec(row.get("close")),
+                        _dec(row.get("volume")),
+                        _dec(row.get("marketCap")),
                     ),
                 )
                 count += 1
@@ -321,6 +331,75 @@ def cmd_coverage(args):
         rows = cur.fetchall()
 
     output({r["symbol"]: {k: v for k, v in dict(r).items() if k != "symbol"} for r in rows})
+
+
+def cmd_backfill_daily_ta(args):
+    """Compute daily TA indicators for all historical OHLCV data."""
+    import pandas as pd
+    from core.indicators import compute_daily
+
+    s = schema()
+    with sync_connect() as conn:
+        cur = conn.execute(f"SELECT id FROM {s}.assets WHERE symbol = %s", (args.asset.upper(),))
+        asset = cur.fetchone()
+        if not asset:
+            error(f"Asset '{args.asset}' not found")
+        asset_id = asset["id"]
+
+        # Fetch all daily OHLCV
+        cur = conn.execute(
+            f"""SELECT date, open, high, low, close, volume
+                FROM {s}.ohlcv_daily WHERE asset_id = %s ORDER BY date ASC""",
+            (asset_id,),
+        )
+        rows = cur.fetchall()
+        if len(rows) < 15:
+            error(f"Insufficient data: {len(rows)} rows (need at least 15)")
+
+        df = pd.DataFrame([dict(r) for r in rows])
+        for col in ["open", "high", "low", "close", "volume"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        indicators = compute_daily(df)
+
+        cols = [
+            "rsi_14", "rsi_7", "stoch_rsi_k", "stoch_rsi_d",
+            "ema_9", "ema_12", "ema_20", "ema_26", "ema_50", "ema_200",
+            "sma_50", "sma_200",
+            "macd", "macd_signal", "macd_hist",
+            "atr_14", "bb_upper", "bb_lower", "bb_width",
+            "adx_14",
+            "obv", "volume_sma_20", "volume_ratio",
+            "regime_score",
+        ]
+
+        count = 0
+        for i, row in indicators.iterrows():
+            date_val = df.iloc[i]["date"]
+            values = [asset_id, date_val]
+            for col in cols:
+                val = row.get(col)
+                if pd.notna(val):
+                    values.append(Decimal(str(round(float(val), 8))))
+                else:
+                    values.append(None)
+
+            placeholders = ", ".join(f"%s" for _ in values)
+            col_names = "asset_id, date, " + ", ".join(cols)
+
+            conn.execute(
+                f"""INSERT INTO {s}.indicators_daily ({col_names})
+                    VALUES ({placeholders})
+                    ON CONFLICT (asset_id, date) DO UPDATE SET
+                        {', '.join(f'{c} = EXCLUDED.{c}' for c in cols)}
+                """,
+                values,
+            )
+            count += 1
+
+        conn.commit()
+
+    output({"status": "ok", "asset": args.asset.upper(), "rows_computed": count})
 
 
 def cmd_poller_status(args):
@@ -402,6 +481,9 @@ def main():
     p.add_argument("--venue", required=True)
     p.add_argument("--file", required=True)
 
+    p = sub.add_parser("backfill-daily-ta")
+    p.add_argument("--asset", required=True)
+
     sub.add_parser("coverage")
     sub.add_parser("poller-status")
 
@@ -420,6 +502,7 @@ def main():
         "ta": cmd_ta,
         "history": cmd_history,
         "seed-daily": cmd_seed_daily,
+        "backfill-daily-ta": cmd_backfill_daily_ta,
         "coverage": cmd_coverage,
         "poller-status": cmd_poller_status,
     }
