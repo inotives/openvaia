@@ -56,7 +56,7 @@ openvaia repo
     │  └─────────────────────────────────────────────────────┘│
     │                                                          │
     │  ┌─────────────────────────────────────────────────────┐│
-    │  │  guardrails.py (HUMAN-AUTHORED, CODEOWNERS)          ││
+    │  │  guardrails.py (HUMAN-AUTHORED)                       ││
     │  └─────────────────────────────────────────────────────┘│
     └──────────────────────────────────────────────────────────┘
 
@@ -84,19 +84,17 @@ Agent (Robin) interaction — CLI only, no git operations:
 
 ## Project Structure
 
-Lives under `inotagent-trading/` in the openvaia monorepo root. Migrations are self-contained in `inotagent-trading/db/migrations/` (separate schema, separate lifecycle). CODEOWNERS rules are in the repo-level `.github/CODEOWNERS`.
+Lives under `inotagent-trading/` in the openvaia monorepo root. Migrations are self-contained in `inotagent-trading/db/migrations/` (separate schema, separate lifecycle).
 
 ```
 openvaia/                              ← monorepo root
-├── .github/CODEOWNERS                 ← add inotagent-trading/guardrails.py, core/exchange.py, core/db.py
-│
 ├── inotagent-trading/                 ← trading toolkit subfolder
 │   ├── pyproject.toml                 # separate Python package (uv managed)
 │   ├── Dockerfile                     # for poller services + baked into agent image
 │   ├── .dockerignore
 │   ├── .python-version               # 3.12
 │   ├── .env.template
-│   ├── guardrails.py                  # HUMAN-AUTHORED, CODEOWNERS-PROTECTED
+│   ├── guardrails.py                  # HUMAN-AUTHORED — runtime trade validation
 │   │
 │   ├── poller/                        # Background pollers (Docker services)
 │   │   ├── public/                    # Public market data (no API key needed)
@@ -137,12 +135,12 @@ openvaia/                              ← monorepo root
 │   │   ├── 001_trading_core.sql       # schema, venues, networks, network_mappings, assets, asset_mappings,
 │   │   │                              #   trading_pairs, ohlcv_1m, ohlcv_daily, indicators_intraday,
 │   │   │                              #   indicators_daily, ohlcv_1h/4h views, strategies, ext_coingecko_*
-│   │   ├── 002_trading_orders.sql     # orders, order_events, executions
-│   │   ├── 003_trading_portfolio.sql  # portfolio_snapshots, portfolio_asset_snapshots,
+│   │   ├── 002_trading_accounts.sql   # accounts, balances, balances_ledger, transfers,
+│   │   │                              #   total_balances view, balance_reconciliation view
+│   │   ├── 003_trading_orders.sql     # orders, order_events, executions
+│   │   ├── 004_trading_portfolio.sql  # portfolio_snapshots, portfolio_asset_snapshots,
 │   │   │                              #   portfolio_strategy_snapshots, pnl_realized, cost_basis,
 │   │   │                              #   paper_balances, trade_journal, open_positions view
-│   │   ├── 004_trading_accounts.sql   # accounts, balances, balances_ledger, transfers,
-│   │   │                              #   total_balances view, balance_reconciliation view
 │   │   └── 005_trading_backtest.sql   # backtest_runs, backtest_trades, backtest_equity
 │   │
 │   ├── data/seeds/                    # CSV files for historical data (gitignored)
@@ -365,7 +363,7 @@ CREATE TABLE trading_platform.balances (
     balance NUMERIC(20,8) NOT NULL DEFAULT 0,
     available NUMERIC(20,8),                 -- available for trading (balance minus locked)
     locked NUMERIC(20,8) DEFAULT 0,          -- in open orders, staking, etc.
-    balance_usdt NUMERIC(20,2),              -- estimated USDT value at sync
+    balance_usd NUMERIC(20,2),              -- estimated USD value at sync
     synced_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (account_id, asset_id)
 );
@@ -431,7 +429,7 @@ CREATE TABLE trading_platform.transfers (
     -- What was transferred
     asset_id INT REFERENCES trading_platform.assets(id),
     amount NUMERIC(20,8) NOT NULL,
-    amount_usdt NUMERIC(20,2),               -- estimated USDT value at transfer time
+    amount_usd NUMERIC(20,2),               -- estimated USD value at transfer time
 
     -- On-chain details (NULL for off-chain / internal)
     network_id INT REFERENCES trading_platform.networks(id),
@@ -500,7 +498,7 @@ SELECT
     SUM(b.balance) AS total_balance,
     SUM(b.available) AS total_available,
     SUM(b.locked) AS total_locked,
-    SUM(b.balance_usdt) AS total_usdt,
+    SUM(b.balance_usd) AS total_usd,
     COUNT(DISTINCT acc.venue_id) AS venue_count
 FROM trading_platform.balances b
 JOIN trading_platform.accounts acc ON acc.id = b.account_id
@@ -591,7 +589,7 @@ VALUES ('cro_momentum', 'momentum', ..., 3, NOW(), true);
 
 ### Order Event Log
 
-Track order status transitions via `order_events` table (defined in Migration 002).
+Track order status transitions via `order_events` table (defined in Migration 003).
 
 ### Order Audit Snapshots
 
@@ -954,7 +952,11 @@ CREATE TABLE trading_platform.strategies (
 -- }
 ```
 
-### Migration 002: Orders & Executions
+### Migration 002: Accounts, Balances & Transfers
+
+Defined in "Poller tables" section above (accounts, balances, balances_ledger, transfers, total_balances view, balance_reconciliation view).
+
+### Migration 003: Orders & Executions
 
 ```sql
 CREATE TABLE trading_platform.orders (
@@ -1007,7 +1009,7 @@ CREATE TABLE trading_platform.executions (
 );
 ```
 
-### Migration 003: Portfolio & Journal
+### Migration 004: Portfolio & Journal
 
 ```sql
 -- ============================================================
@@ -1018,14 +1020,14 @@ CREATE TABLE trading_platform.executions (
 CREATE TABLE trading_platform.portfolio_snapshots (
     id BIGSERIAL PRIMARY KEY,
     date DATE NOT NULL,
-    total_value_usdt NUMERIC(20,2),          -- cash + positions value
-    cash_usdt NUMERIC(20,2),                 -- stablecoins + fiat
-    positions_value_usdt NUMERIC(20,2),      -- non-cash asset value
-    unrealized_pnl_usdt NUMERIC(20,2),       -- open positions P&L
-    realized_pnl_day_usdt NUMERIC(20,2),     -- closed trades P&L today
-    total_fees_day_usdt NUMERIC(20,2),       -- fees paid today
-    hodl_value_usdt NUMERIC(20,2),           -- benchmark: if just held
-    net_deposits_usdt NUMERIC(20,2),         -- cumulative deposits - withdrawals
+    total_value_usd NUMERIC(20,2),          -- cash + positions value
+    cash_usd NUMERIC(20,2),                 -- stablecoins + fiat
+    positions_value_usd NUMERIC(20,2),      -- non-cash asset value
+    unrealized_pnl_usd NUMERIC(20,2),       -- open positions P&L
+    realized_pnl_day_usd NUMERIC(20,2),     -- closed trades P&L today
+    total_fees_day_usd NUMERIC(20,2),       -- fees paid today
+    hodl_value_usd NUMERIC(20,2),           -- benchmark: if just held
+    net_deposits_usd NUMERIC(20,2),         -- cumulative deposits - withdrawals
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (date)
 );
@@ -1036,14 +1038,14 @@ CREATE TABLE trading_platform.portfolio_asset_snapshots (
     date DATE NOT NULL,
     asset_id INT REFERENCES trading_platform.assets(id),
     quantity NUMERIC(20,8),                   -- total holdings
-    avg_cost_usdt NUMERIC(20,8),             -- average cost per unit
-    market_price_usdt NUMERIC(20,8),         -- current price
-    value_usdt NUMERIC(20,2),                -- quantity * market_price
-    cost_basis_usdt NUMERIC(20,2),           -- quantity * avg_cost
-    unrealized_pnl_usdt NUMERIC(20,2),       -- value - cost_basis
+    avg_cost_usd NUMERIC(20,8),             -- average cost per unit
+    market_price_usd NUMERIC(20,8),         -- current price
+    value_usd NUMERIC(20,2),                -- quantity * market_price
+    cost_basis_usd NUMERIC(20,2),           -- quantity * avg_cost
+    unrealized_pnl_usd NUMERIC(20,2),       -- value - cost_basis
     unrealized_pnl_pct NUMERIC(10,4),        -- % gain/loss
-    realized_pnl_day_usdt NUMERIC(20,2),     -- closed trades today for this asset
-    hodl_value_usdt NUMERIC(20,2),           -- if just held initial quantity
+    realized_pnl_day_usd NUMERIC(20,2),     -- closed trades today for this asset
+    hodl_value_usd NUMERIC(20,2),           -- if just held initial quantity
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (date, asset_id)
 );
@@ -1053,14 +1055,14 @@ CREATE TABLE trading_platform.portfolio_strategy_snapshots (
     id BIGSERIAL PRIMARY KEY,
     date DATE NOT NULL,
     strategy_id INT REFERENCES trading_platform.strategies(id),
-    total_value_usdt NUMERIC(20,2),          -- strategy's current value
-    capital_deployed_usdt NUMERIC(20,2),     -- capital allocated
-    unrealized_pnl_usdt NUMERIC(20,2),
-    realized_pnl_day_usdt NUMERIC(20,2),
-    realized_pnl_cumulative_usdt NUMERIC(20,2),
+    total_value_usd NUMERIC(20,2),          -- strategy's current value
+    capital_deployed_usd NUMERIC(20,2),     -- capital allocated
+    unrealized_pnl_usd NUMERIC(20,2),
+    realized_pnl_day_usd NUMERIC(20,2),
+    realized_pnl_cumulative_usd NUMERIC(20,2),
     total_trades INT,
     win_rate NUMERIC(6,4),                   -- wins / total
-    avg_trade_pnl_usdt NUMERIC(20,2),
+    avg_trade_pnl_usd NUMERIC(20,2),
     max_drawdown_pct NUMERIC(10,4),          -- worst peak-to-trough
     sharpe_ratio NUMERIC(10,4),              -- risk-adjusted return
     hodl_comparison_pct NUMERIC(10,4),       -- strategy return vs HODL
@@ -1077,10 +1079,10 @@ CREATE TABLE trading_platform.pnl_realized (
     strategy_id INT REFERENCES trading_platform.strategies(id),
     venue_id INT REFERENCES trading_platform.venues(id),
     quantity NUMERIC(20,8) NOT NULL,          -- quantity sold
-    cost_basis_usdt NUMERIC(20,2) NOT NULL,  -- what we paid (from cost lots)
-    proceeds_usdt NUMERIC(20,2) NOT NULL,    -- what we received
-    fees_usdt NUMERIC(20,2) DEFAULT 0,       -- buy + sell fees
-    pnl_usdt NUMERIC(20,2) NOT NULL,         -- proceeds - cost_basis - fees
+    cost_basis_usd NUMERIC(20,2) NOT NULL,  -- what we paid (from cost lots)
+    proceeds_usd NUMERIC(20,2) NOT NULL,    -- what we received
+    fees_usd NUMERIC(20,2) DEFAULT 0,       -- buy + sell fees
+    pnl_usd NUMERIC(20,2) NOT NULL,         -- proceeds - cost_basis - fees
     pnl_pct NUMERIC(10,4),                   -- % return
     hold_duration_hours INT,                 -- how long held
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -1096,7 +1098,7 @@ CREATE TABLE trading_platform.cost_basis (
     buy_execution_id BIGINT REFERENCES trading_platform.executions(id),
     quantity_original NUMERIC(20,8) NOT NULL, -- original buy quantity
     quantity_remaining NUMERIC(20,8) NOT NULL,-- reduced on sells (FIFO)
-    cost_per_unit_usdt NUMERIC(20,8) NOT NULL,
+    cost_per_unit_usd NUMERIC(20,8) NOT NULL,
     acquired_at TIMESTAMPTZ NOT NULL,
     is_closed BOOLEAN DEFAULT FALSE,
     closed_at TIMESTAMPTZ,
@@ -1149,16 +1151,9 @@ HAVING SUM(CASE WHEN o.side = 'buy' THEN e.quantity ELSE -e.quantity END) > 0;
 -- Query: WHERE paper = false for live positions, WHERE paper = true for paper
 ```
 
-### Migration 004: Accounts, Balances & Transfers
+### Migration 005: Backtest
 
-Accounts, balances, ledger, and transfers tables — defined in the "Poller tables" section above.
-Tables included:
-- `accounts` — sub-accounts per venue
-- `balances` — live balance per account per asset
-- `balances_ledger` — append-only audit trail
-- `transfers` — deposits, withdrawals, internal transfers, bridges
-- `total_balances` view — aggregated per asset
-- `balance_reconciliation` view — live vs ledger discrepancy
+Defined in "Backtesting" section below (backtest_runs, backtest_trades, backtest_equity).
 
 ## CLI Tools
 
@@ -1256,7 +1251,7 @@ python -m cli.strategy set-mode --name cro_momentum --mode live
 
 ## Guardrails (guardrails.py)
 
-Human-authored, CODEOWNERS protected. All trade commands validate against these:
+Human-authored. All trade commands validate against these at runtime:
 
 ```python
 MAX_POSITION_PCT = 0.10          # Max 10% of portfolio per trade
@@ -1264,7 +1259,7 @@ MAX_DAILY_LOSS_PCT = 0.05        # Stop trading if daily loss > 5%
 MAX_OPEN_POSITIONS = 3           # Max 3 concurrent positions
 STOP_LOSS_REQUIRED = True        # Every buy must have stop-loss
 MAX_STOP_LOSS_PCT = 0.08         # Stop-loss can't be wider than 8%
-MIN_TRADE_SIZE_USDT = 5.0        # Minimum trade size
+MIN_TRADE_SIZE_USD = 5.0         # Minimum trade size
 HUMAN_APPROVAL_THRESHOLD = 0.20  # Trades > 20% need human approval
 ALLOWED_SYMBOLS = ["CRO/USDT"]   # Only approved pairs
 PAPER_MODE_DEFAULT = True         # Default to paper trading
@@ -1313,7 +1308,7 @@ Simulated fees (configurable per strategy):
 
 Virtual balance per strategy — seeded on strategy creation:
 
-Defined in Migration 003 (see `paper_balances` table — uses `asset_id` FK, not raw string).
+Defined in Migration 004 (see `paper_balances` table — uses `asset_id` FK, not raw string).
 
 Seeded: `INSERT INTO paper_balances (strategy_id, asset_id, balance) VALUES (1, <USDT_id>, 1000);`
 
@@ -1381,7 +1376,7 @@ Output:
       },
       "suggested_action": {
         "side": "buy",
-        "amount_usdt": 100,
+        "amount_usd": 100,
         "price": 0.0845,
         "stop_loss": 0.0803,
         "take_profit": 0.0912
@@ -1939,13 +1934,13 @@ CREATE TABLE trading_platform.backtest_runs (
     date_from DATE NOT NULL,
     date_to DATE NOT NULL,
     -- Config
-    initial_capital_usdt NUMERIC(20,2) NOT NULL,
+    initial_capital_usd NUMERIC(20,2) NOT NULL,
     slippage_pct NUMERIC(6,4) DEFAULT 0.10,  -- simulated slippage
     maker_fee NUMERIC(6,4),
     taker_fee NUMERIC(6,4),
     -- Results (summary metrics)
     total_return_pct NUMERIC(10,4),
-    total_return_usdt NUMERIC(20,2),
+    total_return_usd NUMERIC(20,2),
     hodl_return_pct NUMERIC(10,4),           -- benchmark: just hold the asset
     alpha_pct NUMERIC(10,4),                 -- strategy return - hodl return
     total_trades INT,
@@ -1984,16 +1979,16 @@ CREATE TABLE trading_platform.backtest_trades (
     -- Position
     side VARCHAR(4) NOT NULL,                -- 'buy' or 'sell'
     quantity NUMERIC(20,8) NOT NULL,
-    cost_basis_usdt NUMERIC(20,2),
-    proceeds_usdt NUMERIC(20,2),
-    fees_usdt NUMERIC(20,2),
-    slippage_usdt NUMERIC(20,2),
+    cost_basis_usd NUMERIC(20,2),
+    proceeds_usd NUMERIC(20,2),
+    fees_usd NUMERIC(20,2),
+    slippage_usd NUMERIC(20,2),
     -- P&L
-    pnl_usdt NUMERIC(20,2),
+    pnl_usd NUMERIC(20,2),
     pnl_pct NUMERIC(10,4),
     hold_duration_days INT,
     -- Portfolio state at this point
-    portfolio_value_usdt NUMERIC(20,2),
+    portfolio_value_usd NUMERIC(20,2),
     drawdown_pct NUMERIC(10,4),              -- from peak at this point
     UNIQUE (run_id, trade_num)
 );
@@ -2003,10 +1998,10 @@ CREATE TABLE trading_platform.backtest_equity (
     id BIGSERIAL PRIMARY KEY,
     run_id BIGINT REFERENCES trading_platform.backtest_runs(id) ON DELETE CASCADE,
     date DATE NOT NULL,
-    portfolio_value_usdt NUMERIC(20,2),
-    cash_usdt NUMERIC(20,2),
-    positions_value_usdt NUMERIC(20,2),
-    hodl_value_usdt NUMERIC(20,2),           -- benchmark comparison
+    portfolio_value_usd NUMERIC(20,2),
+    cash_usd NUMERIC(20,2),
+    positions_value_usd NUMERIC(20,2),
+    hodl_value_usd NUMERIC(20,2),           -- benchmark comparison
     drawdown_pct NUMERIC(10,4),
     UNIQUE (run_id, date)
 );
@@ -2029,7 +2024,7 @@ Output:
 
   "performance": {
     "total_return_pct": 34.5,
-    "total_return_usdt": 345.00,
+    "total_return_usd": 345.00,
     "hodl_return_pct": 12.3,
     "alpha_pct": 22.2,
     "sharpe_ratio": 1.85,
@@ -2309,11 +2304,11 @@ Robin does **not** modify code. All code changes are human-authored. Robin's int
 | Area | Modified By |
 |------|------------|
 | `strategies/*.py` | Human (direct commit) |
-| `core/*.py` | Human (CODEOWNERS protected) |
+| `core/*.py` | Human |
 | `cli/*.py` | Human |
 | `poller/*.py` | Human |
-| `guardrails.py` | Human (CODEOWNERS protected) |
-| `db/migrations/` | Human (CODEOWNERS protected) |
+| `guardrails.py` | Human |
+| `db/migrations/` | Human |
 
 ## Robin's Trading Workflow
 
@@ -2550,7 +2545,6 @@ CREATE INDEX idx_backtest_sweep ON trading_platform.backtest_runs(sweep_id) WHER
 - [ ] Phase 1: Write `core/config.py`, `core/db.py`, `core/models.py`
 - [ ] Phase 1: Write DB migrations in `inotagent-trading/db/migrations/` (001-005)
 - [ ] Phase 1: Write `guardrails.py` + `tests/test_guardrails.py`
-- [ ] Phase 1: Update `.github/CODEOWNERS` with protected paths
 - [ ] Phase 2: Write `core/exchange.py` (ccxt wrapper with paper mode) + `tests/test_exchange.py`
 - [ ] Phase 2: Write `core/indicators.py` (pandas-ta daily + intraday) + `tests/test_indicators.py`
 - [ ] Phase 3: Write public poller (`poller/public/` — OHLCV 1m + ticker)
@@ -2584,8 +2578,8 @@ CREATE INDEX idx_backtest_sweep ON trading_platform.backtest_runs(sweep_id) WHER
 | Human approval | Code | Trades > 20% need approval |
 | Allowed symbols | Code | Only approved pairs |
 | Paper mode default | Code | New strategies start paper |
-| Code changes | Human | All code is human-authored (CODEOWNERS enforced) |
-| Protected guardrails | Git | CODEOWNERS on guardrails.py |
+| Code changes | Human | All code is human-authored |
+| Runtime guardrails | Code | guardrails.py validates every trade |
 | Trade journal | DB | Every trade logged with rationale |
 | Discord reporting | Skill | Every trade reported |
 | Weekly review | Task | Mandatory performance review |
