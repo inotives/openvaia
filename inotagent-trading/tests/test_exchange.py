@@ -69,7 +69,7 @@ class TestPaperExchange:
 
     def test_fetch_balance_returns_empty(self):
         result = self.paper.fetch_balance()
-        assert result == {"total": {}, "free": {}, "used": {}}
+        assert result == {"balances": []}
 
     def test_fetch_orders_returns_empty(self):
         result = self.paper.fetch_orders()

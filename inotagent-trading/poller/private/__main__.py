@@ -43,9 +43,12 @@ class PrivatePoller(BasePoller):
         await self._check_anomalies()
 
     async def _sync_balances(self) -> None:
-        """Fetch exchange balances and update DB."""
+        """Fetch exchange balances and update DB.
+
+        For each account in our DB for this venue, fetch balances using the
+        account's address (sub-account UUID for Crypto.com, etc.).
+        """
         s = schema()
-        balance = self.exchange.fetch_balance()
 
         async with async_conn() as conn:
             # Find venue_id
@@ -57,44 +60,49 @@ class PrivatePoller(BasePoller):
                 return
             venue_id = venue_row["id"]
 
-            # Find default account for this venue
-            account_row = await conn.fetchrow(
-                f"SELECT id FROM {s}.accounts WHERE venue_id = $1 AND is_default = true AND deleted_at IS NULL",
+            # Fetch all active accounts for this venue
+            accounts = await conn.fetch(
+                f"""SELECT id, name, address FROM {s}.accounts
+                    WHERE venue_id = $1 AND is_active = true AND deleted_at IS NULL""",
                 venue_id,
             )
-            if not account_row:
-                logger.warning(f"[private] No default account for venue {self.exchange_id}")
+            if not accounts:
+                logger.warning(f"[private] No accounts for venue {self.exchange_id}")
                 return
-            account_id = account_row["id"]
 
-            total = balance.get("total", {})
-            for symbol, amount in total.items():
-                if not amount or float(amount) == 0:
-                    continue
+            total_synced = 0
+            for account in accounts:
+                account_id = account["id"]
+                account_address = account["address"]  # sub-account UUID or None
 
-                # Resolve asset_id
-                asset_row = await conn.fetchrow(
-                    f"SELECT id FROM {s}.assets WHERE symbol = $1 AND deleted_at IS NULL", symbol
-                )
-                if not asset_row:
-                    continue  # Skip unknown assets
-                asset_id = asset_row["id"]
+                result = self.exchange.fetch_balance(account_address=account_address)
+                balances = result.get("balances", [])
 
-                free = balance.get("free", {}).get(symbol, 0) or 0
-                used = balance.get("used", {}).get(symbol, 0) or 0
+                for bal in balances:
+                    symbol = bal["symbol"]
 
-                await conn.execute(
-                    f"""INSERT INTO {s}.balances (account_id, asset_id, balance, available, locked, synced_at)
-                        VALUES ($1, $2, $3, $4, $5, NOW())
-                        ON CONFLICT (account_id, asset_id) DO UPDATE SET
-                            balance = EXCLUDED.balance, available = EXCLUDED.available,
-                            locked = EXCLUDED.locked, synced_at = NOW()
-                    """,
-                    account_id, asset_id,
-                    Decimal(str(amount)), Decimal(str(free)), Decimal(str(used)),
-                )
+                    # Resolve asset_id
+                    asset_row = await conn.fetchrow(
+                        f"SELECT id FROM {s}.assets WHERE symbol = $1 AND deleted_at IS NULL", symbol
+                    )
+                    if not asset_row:
+                        continue  # Skip unknown assets
 
-            logger.debug(f"[private] Synced {len(total)} balances")
+                    await conn.execute(
+                        f"""INSERT INTO {s}.balances (account_id, asset_id, balance, available, locked, synced_at)
+                            VALUES ($1, $2, $3, $4, $5, NOW())
+                            ON CONFLICT (account_id, asset_id) DO UPDATE SET
+                                balance = EXCLUDED.balance, available = EXCLUDED.available,
+                                locked = EXCLUDED.locked, synced_at = NOW()
+                        """,
+                        account_id, asset_row["id"],
+                        Decimal(str(bal["total"])),
+                        Decimal(str(bal.get("available", 0))),
+                        Decimal(str(bal.get("locked", 0))),
+                    )
+                    total_synced += 1
+
+            logger.debug(f"[private] Synced {total_synced} balances across {len(accounts)} accounts")
 
     async def _sync_orders(self) -> None:
         """Detect fills on open orders."""

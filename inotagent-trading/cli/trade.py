@@ -207,8 +207,8 @@ def cmd_sell(args):
             if strat:
                 strategy_id = strat["id"]
 
-        paper = True
-        if strategy_id:
+        paper = not getattr(args, "live", False)
+        if strategy_id and not getattr(args, "live", False):
             cur = conn.execute(f"SELECT paper_mode FROM {s}.strategies WHERE id = %s", (strategy_id,))
             strat_row = cur.fetchone()
             if strat_row:
@@ -230,6 +230,38 @@ def cmd_sell(args):
                 VALUES (%s, 'open', 'order placed', 'robin')""",
             (order["id"],),
         )
+
+        # Live order: call exchange API
+        if not paper:
+            from core.exchange import CcxtExchange
+            ex = CcxtExchange()
+            account_row = conn.execute(
+                f"SELECT address FROM {s}.accounts WHERE id = %s", (account_id,)
+            ).fetchone()
+            account_addr = account_row["address"] if account_row else None
+
+            ex_order = ex.create_order(
+                f"{args.symbol.upper()}/USDT",
+                "limit" if args.price else "market",
+                "sell", float(args.quantity), float(args.price) if args.price else None,
+                account_address=account_addr,
+            )
+            conn.execute(
+                f"UPDATE {s}.orders SET exchange_order_id = %s WHERE id = %s",
+                (str(ex_order["id"]), order["id"]),
+            )
+            conn.commit()
+            output({
+                "status": "ok",
+                "order_id": order["id"],
+                "exchange_order_id": ex_order["id"],
+                "side": "sell",
+                "symbol": args.symbol.upper(),
+                "quantity": float(args.quantity),
+                "price": float(args.price) if args.price else None,
+                "paper": False,
+            })
+            return
 
         # Paper instant fill + FIFO cost basis consumption
         if paper:
@@ -283,7 +315,7 @@ def cmd_sell(args):
             proceeds = args.quantity * fill_price
             fees = Decimal(str(fee_cost))
             pnl = proceeds - total_cost - fees
-            pnl_pct = (pnl / total_cost * 100) if total_cost > 0 else Decimal("0")
+            pnl_pct = min((pnl / total_cost * 100), Decimal("999999")) if total_cost > 0 else Decimal("0")
 
             conn.execute(
                 f"""INSERT INTO {s}.pnl_realized
@@ -310,13 +342,43 @@ def cmd_cancel(args):
     s = schema()
     with sync_connect() as conn:
         cur = conn.execute(
-            f"""UPDATE {s}.orders SET status = 'cancelled', cancelled_at = NOW()
-                WHERE id = %s AND status = 'open' RETURNING id""",
+            f"""SELECT id, exchange_order_id, paper, asset_id, venue_id
+                FROM {s}.orders WHERE id = %s AND status = 'open'""",
             (args.order_id,),
         )
-        if not cur.fetchone():
+        order = cur.fetchone()
+        if not order:
             error(f"Order {args.order_id} not found or not open")
 
+        # Cancel on exchange if live order with exchange_order_id
+        if not order["paper"] and order["exchange_order_id"]:
+            from core.exchange import CcxtExchange
+            ex = CcxtExchange()
+            # Get account address for sub-account exchanges
+            cur = conn.execute(
+                f"""SELECT acc.address FROM {s}.orders o
+                    JOIN {s}.accounts acc ON acc.id = o.account_id
+                    WHERE o.id = %s""",
+                (args.order_id,),
+            )
+            acc = cur.fetchone()
+            account_addr = acc["address"] if acc else None
+
+            # Resolve symbol from asset
+            cur = conn.execute(f"SELECT symbol FROM {s}.assets WHERE id = %s", (order["asset_id"],))
+            asset = cur.fetchone()
+            symbol = f"{asset['symbol']}/USDT" if asset else None
+
+            try:
+                ex.cancel_order(order["exchange_order_id"], symbol, account_address=account_addr)
+            except Exception as e:
+                error(f"Exchange cancel failed: {e}")
+
+        conn.execute(
+            f"""UPDATE {s}.orders SET status = 'cancelled', cancelled_at = NOW()
+                WHERE id = %s""",
+            (args.order_id,),
+        )
         conn.execute(
             f"""INSERT INTO {s}.order_events (order_id, from_status, to_status, reason, changed_by)
                 VALUES (%s, 'open', 'cancelled', %s, 'robin')""",
@@ -367,6 +429,7 @@ def main():
     p.add_argument("--take-profit", type=Decimal, default=None)
     p.add_argument("--strategy", default=None)
     p.add_argument("--rationale", default=None)
+    p.add_argument("--live", action="store_true", help="Force live mode (skip paper fill)")
 
     p = sub.add_parser("sell")
     p.add_argument("--symbol", required=True)
@@ -375,6 +438,7 @@ def main():
     p.add_argument("--price", type=Decimal, default=None)
     p.add_argument("--strategy", default=None)
     p.add_argument("--rationale", default=None)
+    p.add_argument("--live", action="store_true", help="Force live mode (skip paper fill)")
 
     p = sub.add_parser("cancel")
     p.add_argument("--order-id", type=int, required=True)
