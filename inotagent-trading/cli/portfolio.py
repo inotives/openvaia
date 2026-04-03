@@ -71,9 +71,9 @@ def cmd_accounts(args):
 def cmd_pnl(args):
     s = schema()
     period_filter = {
-        "today": "created_at::date = CURRENT_DATE",
-        "week": "created_at >= CURRENT_DATE - INTERVAL '7 days'",
-        "month": "created_at >= CURRENT_DATE - INTERVAL '30 days'",
+        "today": "p.created_at::date = CURRENT_DATE",
+        "week": "p.created_at >= CURRENT_DATE - INTERVAL '7 days'",
+        "month": "p.created_at >= CURRENT_DATE - INTERVAL '30 days'",
         "all": "true",
     }
 

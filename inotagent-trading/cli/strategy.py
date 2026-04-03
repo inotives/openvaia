@@ -18,7 +18,7 @@ def cmd_list(args):
     s = schema()
     with sync_connect() as conn:
         cur = conn.execute(
-            f"""SELECT name, type, is_active, paper_mode, version, valid_from,
+            f"""SELECT s.name, s.type, s.is_active, s.paper_mode, s.version, s.valid_from,
                        a.symbol AS asset, v.code AS venue
                 FROM {s}.strategies s
                 LEFT JOIN {s}.assets a ON a.id = s.asset_id
