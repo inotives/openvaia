@@ -34,6 +34,22 @@ Trading toolkit for Robin — CLI tools, data pollers, and backtesting engine. L
 - [x] Add root Makefile targets: `trading-start`, `trading-stop`, `trading-status`, `trading-logs`, `trading-migrate`, `trading-test`
 - [x] Write `tests/test_poller.py` (8 tests) — retry logic, health heartbeat, run loop
 
+### Phase 4: CLI Tools
+- [x] Write `cli/__init__.py` — shared JSON encoder + output/error helpers
+- [x] Write `cli/market.py` — 14 commands: add-asset, add-venue, add-mapping, add-network, add-network-mapping, add-trading-pair, add-account, overview, price, ta, history, seed-daily, coverage, poller-status
+- [x] Write `cli/strategy.py` — 8 commands: list, create, view, history, update (SCD Type 2), activate, deactivate, set-mode
+- [x] Write `cli/trade.py` — 4 commands: buy (with guardrail validation + paper instant fill + cost basis), sell (with FIFO lot consumption + realized P&L), cancel, list-orders
+- [x] Write `cli/signals.py` — 2 commands: scan (momentum evaluation + confidence scoring), check
+- [x] Write `cli/portfolio.py` — 10 commands: balance, accounts, pnl, transfers, transfer, snapshot, benchmark, history, reconcile-orders, reconcile-pnl
+- [x] All CLI modules verified against local Postgres
+
+### Migration consolidation
+- [x] Moved all migrations to shared `infra/postgres/migrations/` (dbmate, 001-012)
+- [x] Hardcoded schema names: `openvaia` (platform) + `trading_platform` (trading)
+- [x] Fixed `${SCHEMA}` variable substitution in 006-007
+- [x] Fixed COALESCE in UNIQUE constraints → CREATE UNIQUE INDEX
+- [x] Simplified `local-migrate` Makefile target
+
 ### ES-0012 spec updates (same branch)
 - [x] Renamed `_usdt` → `_usd` across all column names (currency-agnostic)
 - [x] Removed CODEOWNERS references (not needed — Robin is CLI-only)
