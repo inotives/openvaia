@@ -106,7 +106,7 @@ class PublicPoller(BasePoller):
                         Decimal(str(bid)) if bid else None,
                         Decimal(str(ask)) if ask else None,
                         Decimal(str(spread_pct)) if spread_pct else None,
-                        Decimal(str(ticker.get("quoteVolume", 0))),
+                        Decimal(str(ticker.get("quoteVolume") or 0)),
                     )
 
                 logger.debug(f"[public] {pair} @ {candle[4]:.6f} bid={bid} ask={ask}")
