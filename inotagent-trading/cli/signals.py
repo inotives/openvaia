@@ -1,4 +1,7 @@
-"""Signal detection CLI — rules engine + confidence scoring.
+"""Signal detection CLI — strategy evaluation + intraday execution guards.
+
+Daily indicators (CoinGecko, market-wide) drive the signal: "should I trade?"
+Intraday indicators (exchange-specific) guard execution: "is it safe to trade HERE right now?"
 
 Usage:
     python -m cli.signals scan
@@ -9,89 +12,57 @@ from __future__ import annotations
 
 import argparse
 import json
-from decimal import Decimal
+from datetime import datetime, timezone
 
 from cli import error, output
 from core.db import schema, sync_connect
+from strategies.momentum import get_strategy
 
 
-def _evaluate_momentum(params: dict, daily: dict, intraday: dict | None) -> tuple[list, list, dict]:
-    """Evaluate momentum strategy conditions. Returns (reasons, failed, indicators)."""
-    entry = params.get("entry", {})
-    reasons = []
-    failed = []
-    indicators = {}
+# ── Intraday Execution Guards ────────────────────────────────────────────────
+# These use exchange-specific data (Crypto.com 1m candles) to check if the
+# execution venue is safe right now. NOT used for signal generation.
+# Thresholds are deliberately extreme — only block clearly dangerous conditions.
 
-    # RSI
-    rsi = daily.get("rsi_14")
-    if rsi is not None:
-        indicators["rsi_14"] = float(rsi)
-        threshold = entry.get("rsi_buy_threshold", 30)
-        if rsi < threshold:
-            reasons.append(f"RSI(14) = {rsi:.1f} < {threshold} (oversold)")
-        else:
-            failed.append(f"RSI(14) = {rsi:.1f} >= {threshold}")
+def _check_intraday_guards(intraday: dict | None, daily: dict) -> list[str]:
+    """Check execution venue conditions. Returns block reasons (empty = safe)."""
+    if not intraday:
+        return []  # No intraday data — can't guard, allow trade
 
-    # EMA crossover
-    if intraday:
-        ema_fast = intraday.get("ema_9")
-        ema_slow = intraday.get("ema_21")
-        if ema_fast is not None and ema_slow is not None:
-            indicators["ema_9"] = float(ema_fast)
-            indicators["ema_21"] = float(ema_slow)
-            if ema_fast > ema_slow:
-                reasons.append("EMA(9) > EMA(21) (bullish)")
-            else:
-                failed.append("EMA(9) <= EMA(21) (no crossover)")
+    blocks = []
 
-    # ADX
-    adx = daily.get("adx_14")
-    if adx is not None:
-        indicators["adx_14"] = float(adx)
-        min_adx = entry.get("min_adx", 25)
-        if adx > min_adx:
-            reasons.append(f"ADX(14) = {adx:.1f} > {min_adx} (strong trend)")
-        else:
-            failed.append(f"ADX(14) = {adx:.1f} <= {min_adx} (weak trend)")
+    # Check data freshness — stale intraday data shouldn't block
+    ts = intraday.get("timestamp") or intraday.get("computed_at")
+    if ts and isinstance(ts, datetime):
+        age_min = (datetime.now(timezone.utc) - ts).total_seconds() / 60
+        if age_min > 10:
+            return []  # Data > 10 min old, don't use for blocking
 
-    # Volume ratio
-    if intraday:
-        vol_ratio = intraday.get("volume_ratio")
-        if vol_ratio is not None:
-            indicators["volume_ratio"] = float(vol_ratio)
-            min_vol = entry.get("volume_ratio_min", 1.5)
-            if vol_ratio > min_vol:
-                reasons.append(f"Volume ratio = {vol_ratio:.1f} > {min_vol}")
-            else:
-                failed.append(f"Volume ratio = {vol_ratio:.1f} <= {min_vol}")
+    # Guard 1: RSI overbought on execution venue (>75, deliberately high threshold)
+    # "Market rallied on this exchange since daily close — wait for pullback"
+    rsi = intraday.get("rsi_14")
+    if rsi is not None and float(rsi) > 75:
+        blocks.append(f"Venue RSI {float(rsi):.1f} > 75 (overbought on exchange)")
 
-    # Regime score
-    regime = daily.get("regime_score")
-    if regime is not None:
-        indicators["regime_score"] = float(regime)
-        min_regime = entry.get("min_regime_score", 61)
-        if regime > min_regime:
-            reasons.append(f"Regime = {regime:.0f} > {min_regime}")
-        else:
-            failed.append(f"Regime = {regime:.0f} <= {min_regime}")
+    # Guard 2: Spread too wide (>0.5% for CRO, thin liquidity)
+    # "Slippage will eat the trade — wait for liquidity to return"
+    spread = intraday.get("spread_pct")
+    if spread is not None and float(spread) > 0.5:
+        blocks.append(f"Venue spread {float(spread):.2f}% > 0.5% (thin liquidity)")
 
-    return reasons, failed, indicators
+    # Guard 3: Volatility explosion — intraday vol >> daily ATR
+    # "Flash crash/pump in progress — circuit breaker"
+    intraday_vol = intraday.get("volatility_1h")
+    daily_atr = daily.get("atr_14")
+    if intraday_vol is not None and daily_atr is not None and float(daily_atr) > 0:
+        ratio = float(intraday_vol) / float(daily_atr)
+        if ratio > 2.0:
+            blocks.append(f"Venue volatility spike: 1h vol/daily ATR = {ratio:.1f}x (circuit breaker)")
+
+    return blocks
 
 
-def _compute_confidence(reasons: list, failed: list, params: dict) -> float:
-    """Weighted confidence score."""
-    weights = params.get("entry", {}).get("condition_weights", {})
-    total = len(reasons) + len(failed)
-    if total == 0:
-        return 0.0
-
-    if weights:
-        met_weight = sum(weights.get(r.split("(")[0].strip().lower(), 1) for r in reasons)
-        total_weight = met_weight + sum(weights.get(f.split("(")[0].strip().lower(), 1) for f in failed)
-        return met_weight / total_weight if total_weight > 0 else 0.0
-
-    return len(reasons) / total
-
+# ── Scan Command ─────────────────────────────────────────────────────────────
 
 def cmd_scan(args):
     s = schema()
@@ -100,7 +71,7 @@ def cmd_scan(args):
     filters_blocked = []
 
     with sync_connect() as conn:
-        # Check portfolio-level filters
+        # Portfolio-level filters (market-wide)
         from core.filters import check_btc_filter, check_portfolio_drawdown
         btc_block = check_btc_filter(conn, s)
         dd_block = check_portfolio_drawdown(conn, s)
@@ -129,7 +100,7 @@ def cmd_scan(args):
                 no_signal.append({"strategy": strat["name"], "reason": "No asset configured"})
                 continue
 
-            # Fetch latest daily indicators
+            # ── Daily indicators (CoinGecko, market-wide) — drives signal ──
             cur = conn.execute(
                 f"""SELECT * FROM {s}.indicators_daily
                     WHERE asset_id = (SELECT id FROM {s}.assets WHERE symbol = %s)
@@ -142,7 +113,12 @@ def cmd_scan(args):
                 continue
             daily = dict(daily)
 
-            # Fetch latest intraday indicators
+            # Merge custom JSONB into daily dict
+            custom = daily.pop("custom", None)
+            if custom and isinstance(custom, dict):
+                daily.update(custom)
+
+            # ── Intraday indicators (exchange, venue-specific) — guards only ──
             cur = conn.execute(
                 f"""SELECT * FROM {s}.indicators_intraday
                     WHERE asset_id = (SELECT id FROM {s}.assets WHERE symbol = %s)
@@ -152,49 +128,60 @@ def cmd_scan(args):
             intraday_row = cur.fetchone()
             intraday = dict(intraday_row) if intraday_row else None
 
-            # Evaluate based on strategy type
-            if strat["type"] == "momentum":
-                reasons, failed, indicators = _evaluate_momentum(params, daily, intraday)
-            else:
-                no_signal.append({"strategy": strat["name"], "reason": f"Unknown type: {strat['type']}"})
+            # ── Evaluate signal using strategy registry (daily data) ──
+            try:
+                strategy = get_strategy(strat["type"], params)
+                signal = strategy.evaluate_signal(daily, intraday)
+            except ValueError:
+                no_signal.append({"strategy": strat["name"], "reason": f"Unknown strategy type: {strat['type']}"})
                 continue
 
-            confidence = _compute_confidence(reasons, failed, params)
+            if not signal.has_signal or signal.side != "buy":
+                reason = f"Low confidence ({signal.confidence:.2f})" if signal.reasons else "No conditions met"
+                no_signal.append({"strategy": strat["name"], "asset": asset, "reason": reason})
+                continue
 
-            if confidence >= 0.50 and len(reasons) > 0:
-                # Build suggested action
-                exit_params = params.get("exit", {})
-                position_params = params.get("position", {})
-                price = float(daily.get("close") or daily.get("ema_9") or 0)
-
-                suggested = {
-                    "side": "buy",
-                    "price": price,
-                }
-                if exit_params.get("stop_loss_pct"):
-                    suggested["stop_loss"] = round(price * (1 - exit_params["stop_loss_pct"] / 100), 8)
-                if exit_params.get("take_profit_pct"):
-                    suggested["take_profit"] = round(price * (1 + exit_params["take_profit_pct"] / 100), 8)
-
-                signals.append({
-                    "strategy": strat["name"],
-                    "asset": asset,
-                    "venue": strat["venue"],
-                    "signal": "buy",
-                    "confidence": round(confidence, 4),
-                    "reasons": reasons,
-                    "failed_conditions": failed,
-                    "indicators": indicators,
-                    "suggested_action": suggested,
-                })
-            else:
+            # ── Intraday execution guards (exchange data) — blocks trade ──
+            intraday_blocks = _check_intraday_guards(intraday, daily)
+            if intraday_blocks:
                 no_signal.append({
                     "strategy": strat["name"],
                     "asset": asset,
-                    "reason": f"Low confidence ({confidence:.2f})" if reasons else "No conditions met",
+                    "reason": f"Venue guard: {intraday_blocks[0]}",
+                    "signal_was": signal.confidence,
+                    "all_guards": intraday_blocks,
                 })
+                continue
 
-    # If filters blocked, move all signals to blocked
+            # ── Build actionable signal ──
+            exit_params = params.get("exit", {})
+            price = float(daily.get("close") or 0)
+
+            suggested = {"side": "buy", "price": price}
+            # Stop loss from % or ATR
+            if exit_params.get("stop_loss_pct"):
+                suggested["stop_loss"] = round(price * (1 - exit_params["stop_loss_pct"] / 100), 8)
+            elif exit_params.get("stop_atr_mult") and daily.get("atr_14"):
+                suggested["stop_loss"] = round(price - exit_params["stop_atr_mult"] * float(daily["atr_14"]), 8)
+            elif exit_params.get("atr_stop_multiplier") and daily.get("atr_14"):
+                suggested["stop_loss"] = round(price - exit_params["atr_stop_multiplier"] * float(daily["atr_14"]), 8)
+            if exit_params.get("take_profit_pct"):
+                suggested["take_profit"] = round(price * (1 + exit_params["take_profit_pct"] / 100), 8)
+
+            signals.append({
+                "strategy": strat["name"],
+                "asset": asset,
+                "venue": strat["venue"],
+                "signal": signal.side,
+                "confidence": signal.confidence,
+                "reasons": signal.reasons,
+                "failed_conditions": signal.failed_conditions,
+                "indicators": signal.indicators,
+                "suggested_action": suggested,
+                "intraday_available": intraday is not None,
+            })
+
+    # If portfolio filters blocked, move signals to blocked list
     if filters_blocked:
         for sig in signals:
             sig["blocked_by"] = filters_blocked
@@ -203,8 +190,10 @@ def cmd_scan(args):
         output({"signals": signals, "no_signal": no_signal, "filters": []})
 
 
+# ── Check Command ────────────────────────────────────────────────────────────
+
 def cmd_check(args):
-    """Detailed signal analysis for one asset."""
+    """Detailed analysis for one asset — shows daily + intraday + guard status."""
     s = schema()
     with sync_connect() as conn:
         cur = conn.execute(
@@ -214,6 +203,7 @@ def cmd_check(args):
             (args.symbol.upper(),),
         )
         daily = cur.fetchone()
+        daily_dict = dict(daily) if daily else {}
 
         cur = conn.execute(
             f"""SELECT * FROM {s}.indicators_intraday
@@ -222,12 +212,23 @@ def cmd_check(args):
             (args.symbol.upper(),),
         )
         intraday = cur.fetchone()
+        intraday_dict = dict(intraday) if intraday else None
 
-    output({
+        guards = _check_intraday_guards(intraday_dict, daily_dict)
+
+    result = {
         "symbol": args.symbol.upper(),
-        "daily": dict(daily) if daily else None,
-        "intraday": dict(intraday) if intraday else None,
-    })
+        "daily": daily_dict or None,
+        "intraday": intraday_dict,
+        "venue_guards": guards if guards else "OK",
+    }
+
+    if intraday_dict and intraday_dict.get("timestamp"):
+        ts = intraday_dict["timestamp"]
+        if isinstance(ts, datetime):
+            result["intraday_age_minutes"] = round((datetime.now(timezone.utc) - ts).total_seconds() / 60, 1)
+
+    output(result)
 
 
 def main():
