@@ -1,13 +1,12 @@
 # Tools — Ino Environment
 
 ## Runtime
-- **Runtime**: inotagent (Python 3.12)
-- **Workspace**: `/workspace` (env: `WORKSPACE_DIR`)
-- **Repos**: `/workspace/repos/<repo-name>/`
-- **Scratch**: `/workspace/scratch/` — for temporary scripts and data
-- **DB**: accessed via native tools (task_*, memory_*, research_*) — no raw SQL needed
+- **Runtime**: inotagent (Python 3.12), multi-agent container
+- **Workspace**: `/workspace/ino/` (multi-agent: `/workspace/<name>/`)
+- **Scratch**: `/workspace/ino/scratch/` — for temporary scripts and data
+- **DB**: Postgres — accessed via native tools (task_*, memory_*, research_*)
 
-## Available Tools (15 total)
+## Available Tools (22 total)
 
 All tools are native functions — call them directly by name.
 
@@ -156,12 +155,53 @@ memory_search(query="coingecko rate limit", tags=["crypto"])
 - `tags` (optional): Filter by tags
 - `tier` (optional): "short", "long", or "all"
 
+### Resource Tools
+
+**resource_search** — Search external resources (URLs, docs, APIs).
+```
+resource_search(query="coingecko api")
+```
+
+**resource_add** — Add a resource reference.
+```
+resource_add(url="https://api.coingecko.com", name="CoinGecko API", tags=["data", "crypto"])
+```
+
+### Skill Tools
+
+**skill_equip** — Load a skill into current conversation.
+```
+skill_equip(name="research_methodology")
+```
+
+**skill_create** — Propose a new skill (draft, needs human approval).
+```
+skill_create(name="my_new_skill", description="...", content="...", tags=["research"])
+```
+
+**skill_propose** — Propose a skill evolution.
+```
+skill_propose(type="captured", proposed_name="market_sentiment_analysis", direction="...", proposed_content="...")
+```
+
+### Other Tools
+
+**send_email** — Send email.
+```
+send_email(to="boss@example.com", subject="Research Report", body="...")
+```
+
+**delegate** — Delegate a sub-task to another agent.
+```
+delegate(task="Build data pipeline", context="Need ETL for CoinGecko data")
+```
+
 ## Spaces
-- **#public** — general announcements (all agents)
+- **#public** — general announcements
 - **#tasks** — task notifications (auto-posted on create/update)
 
 ## External CLIs
-- **gh** — GitHub CLI (authenticated via `GITHUB_TOKEN`)
-- **git** — pre-configured identity and credentials at boot
-- **curl** — for quick API calls
-- **python3** — for running data scripts from `/workspace/scratch/`
+- **gh** — GitHub CLI
+- **git** — pre-configured identity
+- **curl** — API calls
+- **python3** — scripts from `/workspace/ino/scratch/`
