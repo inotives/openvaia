@@ -21,7 +21,7 @@ from decimal import Decimal
 
 from cli import error, output
 from core.db import schema, sync_connect
-from guardrails import MAX_OPEN_POSITIONS, STOP_LOSS_REQUIRED
+from guardrails import DEFAULTS, STOP_LOSS_REQUIRED
 from strategies.momentum import get_strategy
 
 
@@ -46,7 +46,11 @@ def _run_backtest(
                    i.custom,
                    d.open, d.high, d.low, d.close, d.volume
             FROM {s}.indicators_daily i
-            JOIN {s}.ohlcv_daily d ON d.asset_id = i.asset_id AND d.date = i.date
+            JOIN LATERAL (
+                SELECT open, high, low, close, volume FROM {s}.ohlcv_daily
+                WHERE asset_id = i.asset_id AND date = i.date
+                ORDER BY venue_id LIMIT 1
+            ) d ON true
             WHERE i.asset_id = %s AND i.date BETWEEN %s AND %s
             ORDER BY i.date""",
         (asset_id, date_from, date_to),
