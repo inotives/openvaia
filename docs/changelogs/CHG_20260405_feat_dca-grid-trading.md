@@ -68,5 +68,14 @@ DCA Grid trading with two modes (Batch Grid + Adaptive FIFO Grid), regime-based 
 - [x] create_cycle accepts defensive=True for wider params
 - [x] BTC defensive enabled in seed script
 - [x] Tests: 30 grid tests (3 new: defensive activate, not enabled, wider grid)
+
+### Phase 5: Grid Backtesting
+- [x] `cli/backtest_grid.py` — grid-specific backtester using daily high/low for fill simulation
+- [x] Multi-order simulation: 5 limit orders per cycle, fills when daily low <= grid price
+- [x] TP simulation: batch (high >= avg + target) and FIFO (high >= level + target)
+- [x] Cycle lifecycle: open → fill → TP/stop/expire → close → cooldown → next
+- [x] Capital accounting: unfilled levels return capital on cancel/expire/regime transition
+- [x] Backtested 6 months (2025-10 to 2026-03): all 4 assets show +34-62% alpha vs HODL
+- [x] ETH/SOL net positive (+0.1-0.4%) in -50-62% bear market
 - [x] Entrypoint: removed migration from Docker (run from host only via `make local-migrate`)
 - [x] `clean-slate`: runs migrations from host before deploying containers
