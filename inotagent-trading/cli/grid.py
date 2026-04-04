@@ -162,6 +162,34 @@ def cmd_open(args):
         capital_pct = Decimal(str(params.get("position", {}).get("capital_per_cycle_pct", 10))) / 100
         capital = portfolio * capital_pct
 
+        # ── Sentiment adjustment ──
+        sentiment_score = 0.0
+        sentiment_class = "neutral"
+        sentiment_config = params.get("sentiment", {})
+
+        if sentiment_config.get("enabled", False):
+            from core.sentiment import load_sentiment_data, compute_sentiment_score, get_sentiment_adjustments
+
+            sent_data = load_sentiment_data(conn, s, args.asset)
+            sentiment_score, sentiment_class = compute_sentiment_score(
+                fear_greed_index=sent_data.get("fear_greed_index"),
+                funding_rate=sent_data.get("funding_rate"),
+                weights=sentiment_config.get("weights"),
+            )
+
+            adjustments = get_sentiment_adjustments(sentiment_class, sentiment_config)
+            cap_mult = Decimal(str(adjustments.get("capital_multiplier", 1.0)))
+
+            if cap_mult == 0:
+                output({
+                    "status": "skipped",
+                    "reason": f"Sentiment: {sentiment_class} (score={sentiment_score}) — grid paused (extreme greed)",
+                    "sentiment": {"score": sentiment_score, "class": sentiment_class},
+                })
+                return
+
+            capital = capital * cap_mult
+
         # Get maker fee from trading_pairs
         cur = conn.execute(
             f"""SELECT maker_fee FROM {s}.trading_pairs
@@ -174,7 +202,7 @@ def cmd_open(args):
         # Create cycle
         cycle = create_cycle(
             args.asset.upper(), args.venue, current_price, atr,
-            capital, regime, params, maker_fee=maker_fee,
+            capital, regime, params, sentiment_score=sentiment_score, maker_fee=maker_fee,
         )
         if not cycle:
             error("Could not create grid cycle (extreme volatility?)")

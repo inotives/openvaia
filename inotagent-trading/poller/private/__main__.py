@@ -38,11 +38,12 @@ class PrivatePoller(BasePoller):
         logger.info(f"[private] Exchange: {self.exchange_id}")
 
     async def cycle(self) -> None:
-        """Sync balances, detect fills, check anomalies, sync fees (daily)."""
+        """Sync balances, detect fills, check anomalies, sync fees + funding rate."""
         await self._sync_balances()
         await self._sync_orders()
         await self._check_anomalies()
         await self._sync_fees_if_due()
+        await self._sync_funding_rates()
 
     async def _sync_balances(self) -> None:
         """Fetch exchange balances and update DB.
@@ -243,6 +244,54 @@ class PrivatePoller(BasePoller):
                 logger.info(f"[private] Updated fees for {updated} pairs")
 
         self._last_fee_sync = now
+
+    async def _sync_funding_rates(self) -> None:
+        """Fetch funding rates for perpetual pairs and store in indicators_intraday.custom."""
+        s = schema()
+
+        # Perpetual pairs to check (BTC, ETH have perps on most exchanges)
+        perp_symbols = ["BTC/USD:USD", "ETH/USD:USD"]
+
+        for symbol in perp_symbols:
+            try:
+                fr = self.exchange.exchange.fetch_funding_rate(symbol)
+                rate = fr.get("fundingRate")
+                if rate is None:
+                    continue
+
+                # Extract base asset
+                base = symbol.split("/")[0]
+
+                async with async_conn() as conn:
+                    asset_row = await conn.fetchrow(
+                        f"SELECT id FROM {s}.assets WHERE symbol = $1 AND deleted_at IS NULL", base
+                    )
+                    if not asset_row:
+                        continue
+
+                    venue_row = await conn.fetchrow(
+                        f"SELECT id FROM {s}.venues WHERE code = $1", self.exchange_id
+                    )
+                    if not venue_row:
+                        continue
+
+                    # Upsert into latest indicators_intraday custom JSONB
+                    await conn.execute(
+                        f"""UPDATE {s}.indicators_intraday
+                            SET custom = custom || $1::jsonb
+                            WHERE id = (
+                                SELECT id FROM {s}.indicators_intraday
+                                WHERE asset_id = $2 AND venue_id = $3
+                                ORDER BY timestamp DESC LIMIT 1
+                            )""",
+                        json.dumps({"funding_rate": float(rate)}),
+                        asset_row["id"], venue_row["id"],
+                    )
+
+                logger.debug(f"[private] Funding rate {base}: {rate}")
+            except Exception as e:
+                # Not all pairs have perps — silently skip
+                logger.debug(f"[private] Funding rate {symbol}: {e}")
 
     async def teardown(self) -> None:
         await close_async_pool()

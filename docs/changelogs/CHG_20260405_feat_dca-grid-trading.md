@@ -32,3 +32,11 @@ DCA Grid trading with two modes (Batch Grid + Adaptive FIFO Grid), regime-based 
 - [x] Stop-loss detection: current price <= stop → close cycle, cancel all orders
 - [x] Cycle expiry: 72h → cancel unfilled, mark expired_pending
 - [x] All TP sold detection: closes cycle when all filled levels are sold (FIFO)
+
+### Phase 3: Sentiment Integration
+- [x] `core/sentiment.py` — sentiment score computation (FGI + funding rate + news)
+- [x] `cli/market.py fetch-sentiment` — fetches Fear & Greed Index from API, stores in indicators_daily.custom
+- [x] Private poller `_sync_funding_rates()` — fetches BTC/ETH perp funding rates, stores in indicators_intraday.custom
+- [x] Grid `open` command: loads sentiment, adjusts capital (0x-1.5x), skips on extreme greed
+- [x] Sentiment helpers: normalize_fear_greed, normalize_funding_rate, get_sentiment_adjustments
+- [x] Verified: FGI=11 (extreme fear) fetched and stored, sentiment score computed correctly

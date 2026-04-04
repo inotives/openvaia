@@ -591,6 +591,51 @@ def cmd_compute_daily_ta(args):
     output({"status": "ok", "assets_computed": count})
 
 
+def cmd_fetch_sentiment(args):
+    """Fetch Fear & Greed Index and store in indicators_daily.custom."""
+    import requests as req
+
+    s = schema()
+    try:
+        resp = req.get("https://api.alternative.me/fng/?limit=1", timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        fng = data["data"][0]
+        fgi_value = int(fng["value"])
+        fgi_class = fng["value_classification"]
+    except Exception as e:
+        error(f"Failed to fetch Fear & Greed Index: {e}")
+
+    with sync_connect() as conn:
+        # Update custom JSONB on all assets' latest indicators_daily row
+        cur = conn.execute(
+            f"SELECT DISTINCT asset_id FROM {s}.indicators_daily"
+        )
+        assets = cur.fetchall()
+
+        updated = 0
+        for asset in assets:
+            conn.execute(
+                f"""UPDATE {s}.indicators_daily
+                    SET custom = COALESCE(custom, '{{}}'::jsonb) || %s::jsonb
+                    WHERE id = (
+                        SELECT id FROM {s}.indicators_daily
+                        WHERE asset_id = %s ORDER BY date DESC LIMIT 1
+                    )""",
+                (json.dumps({"fear_greed_index": fgi_value, "fear_greed_class": fgi_class}), asset["asset_id"]),
+            )
+            updated += 1
+
+        conn.commit()
+
+    output({
+        "status": "ok",
+        "fear_greed_index": fgi_value,
+        "classification": fgi_class,
+        "assets_updated": updated,
+    })
+
+
 def cmd_sync_fees(args):
     """Sync trading pair fees from exchange API."""
     from core.exchange import CcxtExchange
@@ -734,6 +779,8 @@ def main():
     p = sub.add_parser("backfill-daily-ta")
     p.add_argument("--asset", required=True)
 
+    sub.add_parser("fetch-sentiment")
+
     p = sub.add_parser("sync-fees")
     p.add_argument("--venue", default=None, help="Venue to sync (default: all exchange venues)")
 
@@ -758,6 +805,7 @@ def main():
         "fetch-daily": cmd_fetch_daily,
         "compute-daily-ta": cmd_compute_daily_ta,
         "backfill-daily-ta": cmd_backfill_daily_ta,
+        "fetch-sentiment": cmd_fetch_sentiment,
         "sync-fees": cmd_sync_fees,
         "coverage": cmd_coverage,
         "poller-status": cmd_poller_status,
