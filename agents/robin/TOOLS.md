@@ -3,162 +3,167 @@
 ## Runtime
 - **Runtime**: inotagent (Python 3.12)
 - **Workspace**: `/workspace` (env: `WORKSPACE_DIR`)
-- **Repos**: `/workspace/repos/<repo-name>/`
-- **DB**: accessed via native tools (task_*, memory_*, research_*) — no raw SQL needed
-- **Python**: `psycopg` (v3) is available in the venv — use it for any direct DB queries
+- **Trading toolkit**: `/opt/inotagent-trading` — all trading CLI commands
+- **DB**: accessed via native tools (task_*, memory_*, research_*) and trading CLI
 
-## Available Tools (15 total)
+## Native Tools (22 total)
 
 All tools are native functions — call them directly by name.
 
-### shell
-Execute shell commands (git, gh, make, npm, system commands).
-```
-shell(command="git status", working_dir="/workspace/repos/myrepo")
-```
-- `command` (required): The command to run
-- `working_dir` (optional): Working directory
-- `timeout` (optional): Timeout in seconds (default: 120)
+### File & Code Tools
 
-### read_file
-Read file contents.
+**shell** — Execute shell commands (git, make, python, system commands).
 ```
-read_file(path="/workspace/repos/myrepo/src/main.py")
+shell(command="git status", working_dir="/workspace/repos/myrepo", timeout=120)
 ```
-- `path` (required): Absolute path
-- `max_lines` (optional): Max lines to read (default: 500)
 
-### list_files
-List files in a directory.
+**read_file** — Read file contents.
+```
+read_file(path="/workspace/repos/myrepo/src/main.py", max_lines=500)
+```
+
+**list_files** — List files in a directory.
 ```
 list_files(path="/workspace/repos/myrepo/src", pattern="*.py")
 ```
-- `path` (required): Directory path
-- `pattern` (optional): Glob pattern (default: "*")
 
-### search_files
-Search for text patterns in files (grep-like).
+**search_files** — Search for text patterns in files (grep-like).
 ```
 search_files(pattern="def main", path="/workspace/repos/myrepo", glob="*.py")
 ```
-- `pattern` (required): Regex pattern
-- `path` (required): Directory to search
-- `glob` (optional): File filter (default: "*")
 
-### write_file
-Write content to a file (create or overwrite).
+**write_file** — Write content to a file (create or overwrite).
 ```
-write_file(path="/workspace/repos/myrepo/src/hello.py", content="print('Hello World')")
+write_file(path="/workspace/repos/myrepo/src/hello.py", content="print('Hello')")
 ```
-- `path` (required): Absolute path
-- `content` (required): File content to write
 
-### browser
-Browse web pages (documentation, deployments, references).
+**browser** — Browse web pages.
 ```
-browser(url="https://docs.python.org/3/library/asyncio.html")
+browser(url="https://docs.python.org/3/", action="get_text")
 ```
-- `url` (required): URL to visit
-- `action` (optional): "get_text", "get_html", "screenshot", "click", "fill"
-- `selector` (optional): CSS selector for click/fill
-- `value` (optional): Value for fill
 
-### task_list
-List tasks with filters.
+### Task Tools
+
+**task_list** — List tasks with filters.
 ```
 task_list(assigned_to="robin", status="todo,in_progress")
+task_list(created_by="robin", status="done")  # check delegated tasks
 ```
-- `assigned_to` (optional): Filter by agent
-- `status` (optional): Comma-separated: todo, in_progress, blocked, review, done
-- `created_by` (optional): Filter by creator
 
-### task_update
-Update a task's status, result, or assignment.
+**task_create** — Create a new task. Omit `assigned_to` for mission board.
 ```
-task_update(key="<task_key>", status="done", result="Created PR #5 with the fix")
+task_create(title="Research CRO sentiment", description="WHY: ... WHAT: ... FOLLOW-UP: ...", priority="high", tags=["research", "crypto"])
 ```
-- `key` (required): Task key from task_list (e.g., "ROB-001", "INO-003")
-- `status` (optional): New status
-- `result` (optional): Result notes
-- `assigned_to` (optional): Reassign
 
-### task_create
-Create a new task.
+**task_update** — Update status, result, or assignment.
 ```
-task_create(title="Fix login bug", assigned_to="robin", priority="high")
+task_update(key="ROB-010", status="done", result="Signal scan complete, no signals")
 ```
-- `title` (required): Task title
-- `assigned_to` (optional): Agent to assign to
-- `description` (optional): Details
-- `priority` (optional): low, medium, high, critical
-- `tags` (optional): List of tags
 
-### send_message
-Send a message to a platform space.
-```
-send_message(space_name="tasks", body="Starting work on <task_key>")
-```
-- `space_name` (required): "public", "tasks", or agent name for DM
-- `body` (required): Message text
+### Communication Tools
 
-### discord_send
-Send a message to a Discord channel (for human-visible updates).
+**send_message** — Send to a platform space.
 ```
-discord_send(channel_id="1482793839583559881", message="Task <task_key> complete: PR raised")
+send_message(space_name="public", body="Daily P&L: +$3.50")
 ```
-- `channel_id` (required): Discord channel ID
-- `message` (required): Message text
 
-### research_search
-Search past research reports (written by any agent). Use this to find specs and research before coding.
+**discord_send** — Send to Discord channel (human-visible).
 ```
-research_search(query="coingecko api", tags=["crypto"])
+discord_send(channel_id="<channel_id>", message="Trade executed: 100 CRO @ $0.085")
 ```
-- `query` (optional): Keyword search
-- `tags` (optional): Filter by topic tags
 
-### research_get
-Get the full body of a research report by ID.
+**send_email** — Send email.
 ```
-research_get(report_id=1)
+send_email(to="boss@example.com", subject="Weekly Report", body="...")
 ```
-- `report_id` (required): Report ID from research_search results
 
-### research_store
-Save a research report (available to all agents).
-```
-research_store(title="Performance Benchmark", summary="- Results here", body="<full markdown>", tags=["benchmark"])
-```
-- `title` (required): Report title
-- `summary` (required): Key findings
-- `body` (required): Full markdown report
-- `tags` (optional): Topic tags
-- `task_key` (optional): Related task key
+### Memory Tools
 
-### memory_store
-Store information for future sessions.
+**memory_store** — Store information for future sessions.
 ```
-memory_store(content="Repo uses pytest for testing", tags=["preference", "testing"], tier="long")
+memory_store(content="CRO momentum works best with RSI<35", tags=["trading", "tuning"], tier="long")
 ```
-- `content` (required): What to remember
-- `tags` (required): Categorization tags
-- `tier` (optional): "short" (auto-pruned 30d) or "long" (permanent)
 
-### memory_search
-Search stored memories.
+**memory_search** — Search stored memories.
 ```
-memory_search(query="testing framework", tags=["preference"])
+memory_search(query="CRO strategy", tags=["trading"])
 ```
-- `query` (optional): Keyword search
-- `tags` (optional): Filter by tags
-- `tier` (optional): "short", "long", or "all"
+
+### Research Tools
+
+**research_store** — Save a research report (visible to all agents).
+```
+research_store(title="Weekly Performance Review", summary="- Key points", body="<markdown>", tags=["trading", "weekly-review"], task_key="ROB-013")
+```
+
+**research_search** — Search past reports.
+```
+research_search(query="CRO market", tags=["trading"])
+```
+
+**research_get** — Get full report by ID.
+```
+research_get(report_id=42)
+```
+
+### Resource Tools
+
+**resource_search** — Search external resources (URLs, docs, APIs).
+```
+resource_search(query="coingecko api")
+```
+
+**resource_add** — Add a resource reference.
+```
+resource_add(url="https://api.coingecko.com", name="CoinGecko API", tags=["data", "crypto"])
+```
+
+### Skill Tools
+
+**skill_equip** — Load a skill into current conversation.
+```
+skill_equip(name="trading_signal_workflow")
+```
+
+**skill_create** — Propose a new skill (draft, needs human approval).
+```
+skill_create(name="my_new_skill", description="...", content="...", tags=["trading"])
+```
+
+**skill_propose** — Propose a skill evolution (fix, derive, or capture).
+```
+skill_propose(type="fix", skill_name="trading_signal_workflow", direction="Add BTC filter check", proposed_content="...")
+```
+
+### Delegation
+
+**delegate** — Delegate a sub-task to another agent (requires models + config).
+```
+delegate(task="Analyze CRO on-chain data", context="Need whale movement data for strategy tuning")
+```
+
+## Trading CLI
+
+All trading commands via shell from `/opt/inotagent-trading`:
+```
+shell("cd /opt/inotagent-trading && python -m cli.<module> <command>")
+```
+
+| Module | Key Commands |
+|--------|-------------|
+| `cli.market` | overview, price, ta, fetch-daily, compute-daily-ta, sync-fees, coverage, add-asset/venue/mapping/account/pair |
+| `cli.signals` | scan, check --symbol CRO |
+| `cli.trade` | buy, sell, cancel, list-orders |
+| `cli.portfolio` | balance, pnl, accounts, transfers, snapshot, benchmark, history, reconcile-pnl |
+| `cli.strategy` | list, create, view, history, update, activate, deactivate, set-mode |
+| `cli.backtest` | run, sweep, list, view |
 
 ## Spaces
-- **#public** — general announcements (all agents)
+- **#public** — general announcements
 - **#tasks** — task notifications (auto-posted on create/update)
 
 ## External CLIs
-- **gh** — GitHub CLI (authenticated via `GITHUB_TOKEN`)
-- **git** — pre-configured identity and credentials at boot
-- **curl** — for quick API calls
-- **python3** — for running data scripts from `/workspace/scratch/`
+- **gh** — GitHub CLI
+- **git** — pre-configured identity
+- **curl** — API calls
+- **python3** — scripts from `/workspace/scratch/`

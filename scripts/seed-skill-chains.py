@@ -184,7 +184,7 @@ SKILL_CHAINS = [
 def main():
     force = "--force" in sys.argv
 
-    schema = os.environ.get("PLATFORM_SCHEMA", "platform")
+    schema = os.environ.get("PLATFORM_SCHEMA", "openvaia")
     if not _SCHEMA_PATTERN.match(schema):
         print(f"Error: invalid schema name '{schema}'")
         sys.exit(1)

@@ -1,6 +1,6 @@
 import postgres from "postgres";
 
-export const SCHEMA = process.env.PLATFORM_SCHEMA || "platform";
+export const SCHEMA = process.env.PLATFORM_SCHEMA || "openvaia";
 
 export const sql = postgres({
   host: process.env.POSTGRES_HOST || "localhost",

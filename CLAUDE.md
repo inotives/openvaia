@@ -4,10 +4,11 @@ For project overview, see `docs/project_summary.md`. For technical specs, see `d
 
 ## Quick Reference
 
-- **103 skill files** (5 global + 98 non-global) in `inotagent/skills/`
+- **104 skill files** (5 global + 99 non-global) in `inotagent/skills/`
 - **22 tools** in `inotagent/src/inotagent/tools/`
-- **7 DB migrations** in `infra/postgres/migrations/`
+- **12 DB migrations** in `infra/postgres/migrations/` (001-007 openvaia, 008-012 trading)
 - **Runtime**: inotagent (async Python), Docker, Postgres + pgvector
+- **Trading**: `inotagent-trading/` — 6 strategies, 38 CLI commands, 3 pollers, 59 tests
 - **UI**: Next.js + Ant Design (port 7860), Gamified Office (`/office`)
 - **Package managers**: uv (Python), npm (UI)
 
@@ -101,7 +102,7 @@ Template:
 - ES-0013: Spec-driven development skills (proposal, spec, design, verification)
 
 ### In Progress / Draft
-- ES-0012: Robin trading toolkit
+- ES-0012: Robin trading toolkit (code complete, paper testing pending)
 - ES-0014: Dynamic skill equipping (skill chains)
 - DRAFT: Production deployment, parallel execution
 
@@ -178,9 +179,18 @@ make local-stop              - Stop locally running agents
 make local-install           - Install Python deps via uv
 make local-migrate           - Run DB migrations locally
 
+# Trading Toolkit
+make trading-start           - Start all 3 pollers (Docker)
+make trading-stop            - Stop pollers
+make trading-status          - Poller health check
+make trading-logs            - Tail poller logs
+make trading-migrate         - Run all DB migrations (via local-migrate)
+make trading-test            - Run inotagent-trading tests (59 tests)
+
 # Testing
 make test                    - Project integrity tests
 make inotagent-test          - 350 unit tests
+make trading-test            - 59 trading toolkit tests
 make bootstrap               - Generate .env from templates
 make create-agent NAME=kai   - Create new agent from template
 ```

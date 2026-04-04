@@ -67,7 +67,7 @@ _SCHEMA_PATTERN = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 def get_schema() -> str:
     """Get the platform schema name. Validated to prevent SQL injection."""
-    schema = os.environ.get("PLATFORM_SCHEMA", "platform")
+    schema = os.environ.get("PLATFORM_SCHEMA", "openvaia")
     if not _SCHEMA_PATTERN.match(schema):
         raise ValueError(f"Invalid PLATFORM_SCHEMA: {schema!r} (must be lowercase alphanumeric + underscores)")
     return schema

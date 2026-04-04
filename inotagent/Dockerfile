@@ -39,6 +39,15 @@ COPY inotagent/models.yml inotagent/platform.yml ./inotagent/
 # Copy DB migrations
 COPY infra/postgres/migrations ./infra/postgres/migrations
 
+# Trading toolkit — separate venv, Robin accesses via shell tool
+COPY inotagent-trading/pyproject.toml inotagent-trading/uv.lock* /opt/inotagent-trading/
+RUN cd /opt/inotagent-trading && uv sync --no-dev 2>/dev/null || uv sync --no-dev
+COPY inotagent-trading/core/ /opt/inotagent-trading/core/
+COPY inotagent-trading/cli/ /opt/inotagent-trading/cli/
+COPY inotagent-trading/poller/ /opt/inotagent-trading/poller/
+COPY inotagent-trading/strategies/ /opt/inotagent-trading/strategies/
+COPY inotagent-trading/guardrails.py /opt/inotagent-trading/
+
 # Workspace directory for repos
 RUN mkdir -p /workspace/repos
 

@@ -1,7 +1,7 @@
 -- migrate:up
 
 -- Curated resource directory
-CREATE TABLE IF NOT EXISTS platform.resources (
+CREATE TABLE IF NOT EXISTS openvaia.resources (
     id          SERIAL PRIMARY KEY,
     url         TEXT NOT NULL,
     name        VARCHAR(128) NOT NULL,
@@ -17,13 +17,13 @@ CREATE TABLE IF NOT EXISTS platform.resources (
 );
 
 CREATE INDEX IF NOT EXISTS idx_resources_tags
-    ON platform.resources USING GIN (tags);
+    ON openvaia.resources USING GIN (tags);
 
 CREATE INDEX IF NOT EXISTS idx_resources_status
-    ON platform.resources (status);
+    ON openvaia.resources (status);
 
 -- Seed curated API resources
-INSERT INTO platform.resources (url, name, description, tags, priority, status, created_by) VALUES
+INSERT INTO openvaia.resources (url, name, description, tags, priority, status, created_by) VALUES
     ('https://api.geckoterminal.com/api/v2', 'GeckoTerminal API',
      'DEX trading data — pools, tokens, OHLCV, trades across Solana, Ethereum, and 100+ chains',
      ARRAY['crypto','dex','solana','ethereum','api'], 50, 'active', 'system'),
@@ -37,4 +37,4 @@ ON CONFLICT DO NOTHING;
 
 -- migrate:down
 
-DROP TABLE IF EXISTS platform.resources;
+DROP TABLE IF EXISTS openvaia.resources;

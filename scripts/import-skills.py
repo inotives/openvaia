@@ -112,7 +112,7 @@ def main():
     db = os.environ.get("POSTGRES_DB", "inotives")
     user = os.environ.get("POSTGRES_USER", "postgres")
     password = os.environ.get("POSTGRES_PASSWORD", "")
-    schema = os.environ.get("PLATFORM_SCHEMA", "platform")
+    schema = os.environ.get("PLATFORM_SCHEMA", "openvaia")
 
     # Validate schema name (same check as inotagent/db/pool.py)
     if not re.match(r"^[a-z_][a-z0-9_]*$", schema):

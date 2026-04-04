@@ -1,4 +1,4 @@
-.PHONY: deploy deploy-all start stop restart down ps logs ui ui-logs ui-dev ui-dev-restart ui-dev-stop ui-dev-build shell test bootstrap build build-base task-list task-get task-create task-update task-summary task-board repo-list repo-add repo-remove repo-agent inotagent-test
+.PHONY: deploy deploy-all start stop restart down ps logs ui ui-logs ui-dev ui-dev-restart ui-dev-stop ui-dev-build shell test bootstrap build build-base task-list task-get task-create task-update task-summary task-board repo-list repo-add repo-remove repo-agent inotagent-test trading-start trading-stop trading-status trading-logs trading-build trading-migrate trading-seed trading-test
 
 build-base:
 	docker build -f inotagent/Dockerfile -t inotagent-base .
@@ -47,6 +47,7 @@ clean-slate: wipe-db deploy-all
 	$(MAKE) import-skills
 	$(MAKE) seed-tasks
 	$(MAKE) seed-chains
+	$(MAKE) trading-setup
 
 # Tear down everything (removes containers)
 down:
@@ -210,21 +211,11 @@ local-install:
 
 # Run DB migrations locally (requires dbmate)
 local-migrate:
-	@SCHEMA=$${PLATFORM_SCHEMA:-openvaia}; \
-	MIGRATION_DIR=$$(mktemp -d); \
-	cp infra/postgres/migrations/*.sql "$$MIGRATION_DIR/"; \
-	if [ "$$SCHEMA" != "platform" ]; then \
-		sed -i.bak "s/CREATE SCHEMA IF NOT EXISTS platform/CREATE SCHEMA IF NOT EXISTS $$SCHEMA/g" "$$MIGRATION_DIR"/*.sql; \
-		sed -i.bak "s/DROP SCHEMA IF EXISTS platform/DROP SCHEMA IF EXISTS $$SCHEMA/g" "$$MIGRATION_DIR"/*.sql; \
-		sed -i.bak "s/platform\./$$SCHEMA./g" "$$MIGRATION_DIR"/*.sql; \
-		rm -f "$$MIGRATION_DIR"/*.bak; \
-	fi; \
-	DB_URL="postgresql://inotives:$$(grep POSTGRES_PASSWORD .env | cut -d= -f2)@localhost:$${EXTERNAL_POSTGRES_PORT:-5445}/inotives?sslmode=disable"; \
-	dbmate -d "$$MIGRATION_DIR" --url "$$DB_URL" --no-dump-schema up; \
-	rm -rf "$$MIGRATION_DIR"
+	@DB_URL="postgresql://inotives:$$(grep POSTGRES_PASSWORD .env | cut -d= -f2)@localhost:$${EXTERNAL_POSTGRES_PORT:-5445}/inotives?sslmode=disable"; \
+	uv run dbmate -d infra/postgres/migrations --url "$$DB_URL" --no-dump-schema up
 
 # Full local setup: install + migrate + import skills + seed tasks + seed chains
-local-setup: local-install local-migrate import-skills seed-tasks seed-chains
+local-setup: local-install local-migrate import-skills seed-tasks seed-chains trading-setup
 	@echo "Local setup complete. Run: make local-run AGENT=ino"
 
 # Run single agent locally
@@ -272,3 +263,73 @@ create-agent:
 
 bootstrap:
 	./scripts/bootstrap.sh
+
+# ─── Trading Toolkit ───────────────────────────────────────────
+
+trading-build:
+	docker compose build poller-public poller-private poller-ta
+
+trading-poller-start:
+	@echo "Starting pollers locally (Postgres on localhost:$${EXTERNAL_POSTGRES_PORT:-5445})..."
+	@cd inotagent-trading && $(TRADING_DB_ENV) nohup uv run python -m poller.public --interval 60 > /tmp/poller-public.log 2>&1 & echo $$! > /tmp/poller-public.pid
+	@cd inotagent-trading && $(TRADING_DB_ENV) nohup uv run python -m poller.private --interval 60 > /tmp/poller-private.log 2>&1 & echo $$! > /tmp/poller-private.pid
+	@cd inotagent-trading && $(TRADING_DB_ENV) nohup uv run python -m poller.ta --interval 60 > /tmp/poller-ta.log 2>&1 & echo $$! > /tmp/poller-ta.pid
+	@sleep 2 && echo "Pollers started" && $(MAKE) trading-poller-status
+
+trading-poller-stop:
+	@for p in public private ta; do \
+		if [ -f /tmp/poller-$$p.pid ]; then \
+			kill $$(cat /tmp/poller-$$p.pid) 2>/dev/null && echo "Stopped poller-$$p" || echo "poller-$$p not running"; \
+			rm -f /tmp/poller-$$p.pid; \
+		fi; \
+	done
+
+trading-poller-status:
+	@for p in public private ta; do \
+		if [ -f /tmp/poller-$$p.pid ] && kill -0 $$(cat /tmp/poller-$$p.pid) 2>/dev/null; then \
+			echo "poller-$$p: running (PID $$(cat /tmp/poller-$$p.pid))"; \
+		else \
+			echo "poller-$$p: stopped"; \
+		fi; \
+	done
+
+trading-poller-logs:
+	@tail -20 /tmp/poller-public.log /tmp/poller-private.log /tmp/poller-ta.log 2>/dev/null || echo "No poller logs"
+
+# Docker pollers (alternative — use when deploying fully in Docker)
+trading-start:
+	docker compose --profile trading up -d
+
+trading-stop:
+	docker compose --profile trading stop
+
+trading-migrate: local-migrate
+
+TRADING_DB_ENV = POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2) POSTGRES_DB=inotives TRADING_SCHEMA=trading_platform
+
+trading-seed:
+	$(TRADING_DB_ENV) python3 scripts/seed-trading.py
+
+trading-seed-ohlcv:
+	@cd inotagent-trading && for pair in "BTC btc" "ETH eth" "SOL sol" "XRP xrp"; do \
+		set -- $$pair; \
+		CSV="data/seeds/$${2}_historical_data.csv"; \
+		if [ -f "$$CSV" ]; then \
+			echo "Seeding $$1 from $$CSV..."; \
+			$(TRADING_DB_ENV) uv run python -m cli.market seed-daily --asset $$1 --venue coinmarketcap --file $$CSV; \
+		else \
+			echo "SKIP $$1 — $$CSV not found"; \
+		fi; \
+	done
+
+trading-backfill-ta:
+	@cd inotagent-trading && for asset in BTC ETH SOL XRP; do \
+		echo "Backfilling TA for $$asset..."; \
+		$(TRADING_DB_ENV) uv run python -m cli.market backfill-daily-ta --asset $$asset; \
+	done
+
+trading-setup: trading-seed trading-seed-ohlcv trading-backfill-ta
+	@echo "Trading setup complete: reference data + OHLCV + TA indicators"
+
+trading-test:
+	cd inotagent-trading && make test

@@ -123,13 +123,90 @@ RECURRING_TASKS = [
         "schedule_at": "00:00",  # 08:00 SGT
         "recurrence_minutes": 1440,
     },
+
+    # ROBIN — Trading Tasks
+    {
+        "key": "ROB-010",
+        "title": "Hourly Signal Scan",
+        "description": (
+            "Run trading signal scan. Equip skill: trading_signal_workflow. "
+            "Execute: cd /opt/inotagent-trading && python -m cli.signals scan. "
+            "If signals found, evaluate confidence and execute trades per the workflow. "
+            "If filters block signals, report to Discord and wait."
+        ),
+        "assigned_to": "robin",
+        "priority": "high",
+        "tags": ["schedule:hourly", "trading", "signals"],
+        "schedule_at": None,
+        "recurrence_minutes": 60,
+    },
+    {
+        "key": "ROB-011",
+        "title": "Daily Market Overview + P&L",
+        "description": (
+            "Run daily trading review. Equip skill: trading_portfolio_management. "
+            "Execute: cli.market overview, cli.portfolio pnl --period today, "
+            "cli.portfolio balance, cli.portfolio snapshot. "
+            "Post daily P&L summary to Discord."
+        ),
+        "assigned_to": "robin",
+        "priority": "medium",
+        "tags": ["schedule:daily@10:00", "trading", "portfolio"],
+        "schedule_at": "10:00",
+        "recurrence_minutes": 1440,
+    },
+    {
+        "key": "ROB-012",
+        "title": "Daily OHLCV + TA Refresh",
+        "description": (
+            "Fetch latest daily OHLCV data and recompute daily TA indicators. "
+            "Execute: cli.market fetch-daily, cli.market compute-daily-ta. "
+            "Check cli.market coverage for data gaps."
+        ),
+        "assigned_to": "robin",
+        "priority": "medium",
+        "tags": ["schedule:daily@02:00", "trading", "data"],
+        "schedule_at": "02:00",
+        "recurrence_minutes": 1440,
+    },
+    {
+        "key": "ROB-013",
+        "title": "Weekly Trading Performance Review",
+        "description": (
+            "Run weekly trading performance review. Equip skill: trading_portfolio_management. "
+            "Execute: cli.portfolio pnl --period week, cli.portfolio benchmark --days 7. "
+            "Review each strategy's performance: win rate trend, consecutive losses, "
+            "drawdown. If any strategy has 3+ consecutive losses, deactivate and report. "
+            "Post weekly summary to Discord with CONTINUE/PAUSE/ADJUST recommendation per strategy."
+        ),
+        "assigned_to": "robin",
+        "priority": "medium",
+        "tags": ["schedule:weekly@SUN:12:00", "trading", "review"],
+        "schedule_at": "12:00",
+        "recurrence_minutes": 10080,
+    },
+    {
+        "key": "ROB-014",
+        "title": "Weekly Backtest Re-evaluation",
+        "description": (
+            "Re-run backtests with latest 12 months of data for all active strategies. "
+            "Execute: cli.backtest run --strategy <name> --from <12mo_ago> --to today. "
+            "Compare with previous backtest results. If Sharpe declining or win rate dropping, "
+            "run param sweep to find better settings. Report findings to Discord."
+        ),
+        "assigned_to": "robin",
+        "priority": "low",
+        "tags": ["schedule:weekly@SUN:13:00", "trading", "backtest"],
+        "schedule_at": "13:00",
+        "recurrence_minutes": 10080,
+    },
 ]
 
 
 def main():
     force = "--force" in sys.argv
 
-    schema = os.environ.get("PLATFORM_SCHEMA", "platform")
+    schema = os.environ.get("PLATFORM_SCHEMA", "openvaia")
 
     with psycopg.connect(
         host=os.environ["POSTGRES_HOST"],

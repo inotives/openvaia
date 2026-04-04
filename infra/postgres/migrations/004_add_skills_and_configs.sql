@@ -1,7 +1,7 @@
 -- migrate:up
 
 -- Skill definitions
-CREATE TABLE IF NOT EXISTS platform.skills (
+CREATE TABLE IF NOT EXISTS openvaia.skills (
     id          SERIAL PRIMARY KEY,
     name        VARCHAR(128) UNIQUE NOT NULL,
     description TEXT,
@@ -17,28 +17,28 @@ CREATE TABLE IF NOT EXISTS platform.skills (
 );
 
 CREATE INDEX IF NOT EXISTS idx_skills_tags
-    ON platform.skills USING GIN (tags);
+    ON openvaia.skills USING GIN (tags);
 
 CREATE INDEX IF NOT EXISTS idx_skills_status
-    ON platform.skills (status);
+    ON openvaia.skills (status);
 
 CREATE INDEX IF NOT EXISTS idx_skills_global_enabled
-    ON platform.skills (global, enabled);
+    ON openvaia.skills (global, enabled);
 
 -- Agent-skill assignments
-CREATE TABLE IF NOT EXISTS platform.agent_skills (
+CREATE TABLE IF NOT EXISTS openvaia.agent_skills (
     id          SERIAL PRIMARY KEY,
     agent_name  VARCHAR(64) NOT NULL,
-    skill_id    INT NOT NULL REFERENCES platform.skills(id) ON DELETE CASCADE,
+    skill_id    INT NOT NULL REFERENCES openvaia.skills(id) ON DELETE CASCADE,
     priority    INT NOT NULL DEFAULT 100,
     UNIQUE (agent_name, skill_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_skills_agent
-    ON platform.agent_skills (agent_name);
+    ON openvaia.agent_skills (agent_name);
 
 -- Agent runtime configs (overridable via UI/DB)
-CREATE TABLE IF NOT EXISTS platform.agent_configs (
+CREATE TABLE IF NOT EXISTS openvaia.agent_configs (
     id          SERIAL PRIMARY KEY,
     agent_name  VARCHAR(64) NOT NULL,
     key         VARCHAR(128) NOT NULL,
@@ -50,10 +50,10 @@ CREATE TABLE IF NOT EXISTS platform.agent_configs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_configs_agent
-    ON platform.agent_configs (agent_name);
+    ON openvaia.agent_configs (agent_name);
 
 -- migrate:down
 
-DROP TABLE IF EXISTS platform.agent_configs;
-DROP TABLE IF EXISTS platform.agent_skills;
-DROP TABLE IF EXISTS platform.skills;
+DROP TABLE IF EXISTS openvaia.agent_configs;
+DROP TABLE IF EXISTS openvaia.agent_skills;
+DROP TABLE IF EXISTS openvaia.skills;
