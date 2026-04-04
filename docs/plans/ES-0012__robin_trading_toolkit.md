@@ -1328,6 +1328,88 @@ Paper engine lives in `core/exchange.py`:
 - Order calls (create_order, cancel_order) are simulated locally
 - `get_exchange(paper_mode=True)` returns PaperExchange, `False` returns CcxtExchange
 
+## Data Source Architecture
+
+Two data sources serve different purposes:
+
+| Source | Data | Updates | Used For |
+|--------|------|---------|----------|
+| **CoinGecko** (market-wide) | Daily OHLCV, aggregated across all exchanges | Daily at 02:00 UTC via `cli.market fetch-daily` | Signal generation — "should I trade?" |
+| **Exchange** (venue-specific) | 1m candles + bid/ask/spread from Crypto.com | Every 60s via public poller | Execution guards — "is it safe to trade HERE?" |
+
+**Why two sources?**
+- CoinGecko aggregates volume from 50+ exchanges — gives true market picture for TA indicators
+- Exchange 1m data reflects the venue where orders execute — catches venue-specific issues (spread spikes, liquidity gaps)
+
+**Flow:**
+```
+Daily (CoinGecko, market-wide)           Intraday (Exchange, venue-specific)
+        ↓                                          ↓
+  Strategy evaluates                     Guard checks before execution
+  regime, RSI, ADX, BB...               venue RSI < 75? spread < 0.5%? vol stable?
+        ↓                                          ↓
+   Signal generated  ───────────────→  Guards pass? ──→ Execute
+                                       Guards fail? ──→ Block + log reason
+```
+
+## Strategy Portfolio
+
+Six strategies covering the full regime spectrum. All evaluate simultaneously — the regime score determines which fires.
+
+| Strategy | Type | Regime | Size | Role |
+|----------|------|--------|------|------|
+| `cro_trend_follow` | trend_follow | 61+ | 15% | Ride uptrends with ATR trailing stop |
+| `cro_momentum` | momentum | 40-60 | 10% | Buy RSI oversold dips |
+| `cro_scout` | volatility_breakout | Squeeze | 5% | Catch moves at squeeze release |
+| `cro_divergence` | rsi_divergence | 25-50 | 10% | Buy RSI bullish divergence |
+| `cro_mean_revert` | mean_reversion | 15-35 | 12% | Range trade at BB lower band |
+| `cro_bollinger` | bollinger | Any | 10% | BB mean reversion (disabled by default) |
+
+**Regime coverage:**
+```
+Crash (0-15):   ALL idle — don't catch falling knives
+Sideways (15-25): mean_reversion
+Transition (25-35): mean_reversion + divergence
+Moderate (35-50): divergence + momentum
+Strong (50-60): momentum
+Trending (61+): trend_follow
+Squeeze (any): scout fires regardless of regime
+```
+
+### Regime Score (improved, 3-component)
+
+```
+RS = (score_adx × 0.4) + (score_slope × 0.4) + (score_vol × 0.2)
+
+Component 1: ADX(14) — trend strength (weight 0.4)
+  ADX <= 15 → 0, ADX = 25 → 50, ADX >= 40 → 100
+
+Component 2: EMA50 slope 5d% — trend direction & velocity (weight 0.4)
+  slope <= 0% → 0, slope >= 0.5% → 100
+
+Component 3: Volatility ratio ATR(14)/StdDev(14) — noise filter (weight 0.2, inverted)
+  ratio >= 1.2 → 0 (choppy), ratio <= 0.8 → 100 (smooth trend)
+```
+
+### Intraday Execution Guards
+
+Before executing ANY buy signal, three venue-specific guards check exchange conditions:
+
+| Guard | Threshold | Blocks When |
+|-------|-----------|-------------|
+| Venue RSI | > 75 | Market rallied on exchange since daily update |
+| Spread | > 0.5% | Thin liquidity, slippage risk |
+| Volatility | 1h vol > 2× daily ATR | Flash crash/pump in progress |
+
+Guards use extreme thresholds because intraday data (single exchange) differs from daily data (market-wide). They only block clearly dangerous conditions, not marginal differences.
+
+### Portfolio-Level Filters
+
+| Filter | Blocks When |
+|--------|-------------|
+| BTC correlation | BTC RSI < 25 or BTC regime < 15 (BTC crashing drags alts) |
+| Portfolio drawdown | Portfolio down > 15% from peak |
+
 ## Signal Detection (Hybrid: Rules + Agent Judgment)
 
 Signal detection uses a hybrid approach: a rules engine generates signal candidates, then the agent reviews and makes the final decision.
