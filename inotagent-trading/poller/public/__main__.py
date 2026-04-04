@@ -160,7 +160,7 @@ class PublicPoller(BasePoller):
 
             except Exception as e:
                 logger.error(f"[public] Failed to fetch {pair_symbol}: {e}")
-                raise  # Let base poller handle retry
+                continue  # Skip this pair, continue with others
 
     async def teardown(self) -> None:
         await close_async_pool()

@@ -49,5 +49,14 @@ DCA Grid trading with two modes (Batch Grid + Adaptive FIFO Grid), regime-based 
 - [x] `core/sentiment.py` — store_sentiment_snapshot + get_sentiment_trend (7d history)
 - [x] `cli/market.py sentiment` — show composite score, components, adjustments, 7d trend
 - [x] `cli/market.py sentiment --news-score -0.5` — Robin stores its news analysis score
+- [x] Grid monitoring moved to TA poller (60s, no LLM) — Robin only handles decisions hourly
+- [x] ROB-010 reverted to hourly: opens new cycles, regime transitions, signal scan (LLM-worthy)
+- [x] TA poller handles: fill detection, TP placement, stop-loss, expiry (mechanical, no LLM)
+- [x] Grid monitoring moved to TA poller (60s, no LLM) — fills, TPs, stop-loss, expiry
+- [x] ROB-010 reverted to hourly — Robin handles decisions (open cycles, regime, signals)
+- [x] Poller resilience: all 3 pollers run each step independently (one failure doesn't block others)
+- [x] Public poller: continues to next pair on failure instead of aborting cycle
+- [x] Updated all Robin tasks for DCA grid as primary strategy + UTC times
+- [x] Updated skill chains: trading_analysis + trading_execution use new skill names
 - [x] Entrypoint: removed migration from Docker (run from host only via `make local-migrate`)
 - [x] `clean-slate`: runs migrations from host before deploying containers

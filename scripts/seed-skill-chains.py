@@ -158,24 +158,25 @@ SKILL_CHAINS = [
     # === TRADING CHAINS (robin-specific) ===
     {
         "name": "trading_analysis",
-        "description": "Market analysis — technical analysis, intelligence, report",
-        "match_tags": ["trading:analysis", "trading", "market"],
-        "match_keywords": ["market", "price", "trading", "crypto", "gold"],
+        "description": "Market analysis — signals, sentiment, portfolio review",
+        "match_tags": ["trading:analysis", "trading", "market", "portfolio"],
+        "match_keywords": ["market", "price", "trading", "crypto", "signal", "scan", "overview", "P&L", "pnl"],
         "steps": [
-            {"phase": "analyze", "skills": ["trading_analysis"]},
-            {"phase": "intelligence", "skills": ["market_intelligence"]},
+            {"phase": "analyze", "skills": ["trading_signal_workflow"]},
+            {"phase": "sentiment", "skills": ["trading_sentiment_analysis"]},
+            {"phase": "review", "skills": ["trading_portfolio_management"]},
             {"phase": "report", "skills": ["report_format"]},
         ],
     },
     {
         "name": "trading_execution",
-        "description": "Trade execution — analysis, operations, risk management",
-        "match_tags": ["trading:execution", "trade"],
-        "match_keywords": ["execute", "buy", "sell", "position", "rebalance"],
+        "description": "Trade execution — signals, strategy reference, risk management",
+        "match_tags": ["trading:execution", "trade", "signals"],
+        "match_keywords": ["execute", "buy", "sell", "position", "grid", "signal"],
         "steps": [
-            {"phase": "analyze", "skills": ["trading_analysis"]},
-            {"phase": "execute", "skills": ["trading_operations"]},
-            {"phase": "risk", "skills": ["portfolio_rebalancing", "risk_assessment"]},
+            {"phase": "analyze", "skills": ["trading_signal_workflow"]},
+            {"phase": "reference", "skills": ["trading_strategy_reference"]},
+            {"phase": "execute", "skills": ["trading_portfolio_management"]},
         ],
     },
 ]

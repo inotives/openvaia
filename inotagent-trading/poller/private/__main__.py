@@ -38,12 +38,27 @@ class PrivatePoller(BasePoller):
         logger.info(f"[private] Exchange: {self.exchange_id}")
 
     async def cycle(self) -> None:
-        """Sync balances, detect fills, check anomalies, sync fees + funding rate."""
-        await self._sync_balances()
-        await self._sync_orders()
-        await self._check_anomalies()
-        await self._sync_fees_if_due()
-        await self._sync_funding_rates()
+        """Sync balances, detect fills, check anomalies, sync fees + funding rate.
+
+        Each step is independent — one failure doesn't block others.
+        """
+        errors = []
+
+        for name, func in [
+            ("sync_balances", self._sync_balances),
+            ("sync_orders", self._sync_orders),
+            ("check_anomalies", self._check_anomalies),
+            ("sync_fees", self._sync_fees_if_due),
+            ("sync_funding_rates", self._sync_funding_rates),
+        ]:
+            try:
+                await func()
+            except Exception as e:
+                logger.error(f"[private] {name} failed: {e}")
+                errors.append(name)
+
+        if errors:
+            logger.warning(f"[private] Cycle completed with errors in: {', '.join(errors)}")
 
     async def _sync_balances(self) -> None:
         """Fetch exchange balances and update DB.
