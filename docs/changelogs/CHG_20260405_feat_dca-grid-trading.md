@@ -11,8 +11,13 @@ DCA Grid trading with two modes (Batch Grid + Adaptive FIFO Grid), regime-based 
 ## Changes
 
 ### Phase 1: Batch Grid Engine + BTC Grid
-- [ ] Create `strategies/dca_grid.py` — grid level calculation, Batch mode cycle state
-- [ ] Create grid cycle manager — open/fill/close/cancel lifecycle
-- [ ] Update `cli/trade.py` — multiple limit orders + cancel-all-for-cycle
-- [ ] Create `btc_dca_grid` strategy with Batch mode defaults
-- [ ] Paper test: place grid orders, verify fills, batch take-profit
+- [x] `strategies/dca_grid.py` — grid level computation (ATR-based spacing, weighted capital allocation)
+- [x] Grid cycle state management (GridLevel, GridCycle dataclasses)
+- [x] Mode selection: Batch (RS 0-30) / Adaptive FIFO (RS 30-60) with auto-selection
+- [x] Entry conditions: regime with hysteresis (pause 65, resume 55), RSI, ATR, active cycle check, expired cap
+- [x] Volatility regime detection (low/normal/high/extreme) with per-regime params
+- [x] TP computation: batch (weighted avg + target + fees), FIFO (per-level + fees)
+- [x] `cli/grid.py` — new CLI module: open (places 5 maker limit orders), status, cancel
+- [x] `tests/test_dca_grid.py` — 27 tests (levels, weights, mode, hysteresis, TP, entry conditions)
+- [x] `btc_dca_grid` strategy added to seed script with default params
+- [x] Verified: open cycle → check status → cancel cycle against local DB
