@@ -1,282 +1,309 @@
-# ES-0015 — Day Trading Toolkit
+# ES-0015 — Day Trading on Hyperliquid
 
 ## Status: DRAFT
 
-## Problem / Pain Points
+## Problem
 
-Current trading strategies rely entirely on **lagging daily indicators** (RSI, EMA, MACD, BB) computed from CoinGecko's market-wide daily OHLCV. While these work for swing trading (days-weeks), they are too slow for day trading:
+Current strategies (ES-0012) trade crypto on Crypto.com using daily indicators. Signals are 12-24h stale, resulting in ~1 trade every 2 weeks. In bear markets, Robin sits idle for weeks.
 
-- Daily signals are 12-24 hours stale by the time Robin acts
-- Miss intraday opportunities (flash crashes, momentum spikes)
-- Can't detect real-time market microstructure (volume spikes, order flow)
-- No leading indicators — only react to what already happened
-- BTC correlation filter blocks during extended bear markets, Robin sits idle
+Meanwhile, Hyperliquid offers tokenized stocks (xStocks) and crypto with 0.04-0.07% fees (7-12x cheaper than Crypto.com), enabling profitable day trading that isn't viable elsewhere.
 
-## Suggested Solution
+## Goal
 
-Enhance inotagent-trading with **intraday indicators, leading signals, and day trading strategies** that operate on 1m/5m/1h data from the exchange.
+Enable Robin to day-trade on Hyperliquid — **1-5 trades per day** across xStocks (AAPL, TSLA, NVDA, SPY) and crypto (BTC, ETH), using intraday indicators from 1m candle data.
 
-Three layers:
-1. **Intraday indicators** — computed from our existing 1m poller data
-2. **New data sources** — order book, funding rate, open interest (future)
-3. **Day trading strategies** — fast entry/exit, tighter stops, smaller positions
+## Why Hyperliquid
 
-## Layer 1: Intraday Indicators (from existing 1m data)
+| Feature | Detail |
+|---------|--------|
+| **Fees** | 0.04% maker / 0.07% taker spot. 0.015% / 0.045% perps. Round-trip **0.11%** (vs 0.75% Crypto.com) |
+| **xStocks** | AAPL, AMZN, GOOGL, META, MSFT, NVDA, TSLA, SPY, QQQ — tokenized stocks |
+| **Crypto** | BTC, ETH, SOL + 600+ other pairs |
+| **Trading hours** | 24/7 — stocks trade round the clock |
+| **Access** | Wallet-based (EVM/Arbitrum), no KYC for most operations |
+| **ccxt support** | Full support — `ccxt.hyperliquid()` |
 
-No new data sources needed — computed by TA poller from `ohlcv_1m`.
-
-### Volume Spike Detector
-Detects sudden volume increases that often precede big moves.
+### Fee Math — Why Day Trading Works Here
 
 ```
-volume_spike = current_volume / avg_volume_20
-If spike > 3.0 AND price direction aligns → momentum signal
-If spike > 3.0 AND price reverses → exhaustion signal
+Target: +0.5% per trade, 5 trades/day
+
+Hyperliquid:  5 × 0.5% - 5 × 0.11% = +1.95%/day net
+Crypto.com:   5 × 0.5% - 5 × 0.75% = -1.25%/day net  ← loses money
+
+Same strategy, different venue, opposite result.
 ```
 
-### VWAP Bands
-Price relative to intraday VWAP ± ATR. Mean reversion signal for intraday.
+### Available Pairs
+
+**xStocks (spot, /USDC):**
+
+| Pair | Asset | Why Trade It |
+|------|-------|-------------|
+| AAPL/USDC | Apple | High liquidity, steady trends |
+| NVDA/USDC | NVIDIA | AI hype = high volatility |
+| TSLA/USDC | Tesla | Most volatile mega-cap |
+| SPY/USDC | S&P 500 ETF | Market benchmark, mean-reverts well |
+| QQQ/USDC | Nasdaq 100 ETF | Tech-heavy, follows NVDA/AAPL |
+| GOOGL/USDC | Google | Steady, good for VWAP reversion |
+| META/USDC | Meta | Volatile on news |
+| MSFT/USDC | Microsoft | Stable, low-vol day trades |
+| AMZN/USDC | Amazon | Mid-volatility |
+
+**Perpetuals (even lower fees):** CASH-NVDA, CASH-TSLA, XYZ-AAPL, etc. — 0.06% round-trip.
+
+**Crypto:** BTC/USDC, ETH/USDC — same assets as Crypto.com but with cheaper fees for day trading.
+
+## Intraday Indicators
+
+Computed by TA poller from 1m candles (same infrastructure as ES-0012). Stored in `indicators_intraday.custom` JSONB — no migration needed.
+
+| Indicator | Formula | Used By |
+|-----------|---------|---------|
+| `vwap_deviation_pct` | `(close - VWAP) / VWAP × 100` | VWAP Reversion |
+| `volume_spike_5m` | `5m_volume / avg_1h_volume` | Volume Breakout |
+| `rsi_prev_2h` | RSI(14) value 2 hours ago | RSI Bounce (fresh drop check) |
+| `ema_cross_direction` | 1=bullish cross, -1=bearish, 0=none | EMA Crossover |
+| `consecutive_candles` | Count of same-direction 1m candles | Volume Breakout, EMA Cross |
+| `spread_z_score` | `(spread - avg) / stddev` over 60 bars | All (liquidity guard) |
+
+## Day Trading Strategies
+
+### Strategy 1: VWAP Reversion — "The Snapper"
+
+Buy when price stretches below VWAP, sell the snap-back to mean.
 
 ```
-vwap_upper = VWAP + (1.5 × intraday_ATR)
-vwap_lower = VWAP - (1.5 × intraday_ATR)
+Entry:
+  - Price < VWAP - (1.5 × intraday ATR)         — stretched below mean
+  - Intraday RSI(14) < 30                        — oversold confirmation
+  - Spread < 0.15%                               — good liquidity (Hyperliquid has tight spreads)
+  - Volume not spiking (< 3x avg)                — drifting, not panic selling
+  - No trade in last 30 min                       — cooldown
 
-Price below vwap_lower → oversold intraday (buy signal)
-Price above vwap_upper → overbought intraday (sell signal)
-Price crossing VWAP from below → bullish
+Exit:
+  - Price reaches VWAP                            — mean reached (primary target)
+  - OR profit > +0.5%                             — take profit
+  - OR loss > -0.3%                               — hard stop
+  - OR held > 4 hours                             — time stop
+
+Position: 5% of capital
+Expected: 2-5 trades/day in ranging markets
+Fee impact: 0.11% round-trip on 0.5% target = 0.39% net profit per trade
 ```
 
-### Momentum Rate of Change (ROC)
-Not just RSI level, but how fast it's changing. Detects trend acceleration.
+### Strategy 2: Intraday RSI Bounce — "The Dip Buyer"
+
+Buy extreme RSI oversold on 1h timeframe, sell when recovered.
 
 ```
-rsi_roc = (RSI_now - RSI_5_bars_ago) / 5
-If rsi_roc > 2.0 → momentum accelerating (trend strengthening)
-If rsi_roc < -2.0 → momentum decelerating (reversal likely)
+Entry:
+  - Intraday RSI(14) < 25                        — extreme oversold
+  - RSI was > 35 within last 2 hours              — fresh drop, not stuck
+  - Spread < 0.15%
+
+Exit:
+  - Intraday RSI > 50                             — momentum recovered
+  - OR profit > +0.8%                             — take profit
+  - OR loss > -0.5%                               — hard stop
+  - OR held > 6 hours                             — time stop
+
+Position: 5% of capital
+Expected: 1-3 trades/day during volatile sessions
 ```
 
-### Candle Pattern Detection
-From 1m candles, detect actionable patterns:
+### Strategy 3: EMA Crossover Scalp — "The Surfer"
 
-- **Engulfing** — current candle fully engulfs previous (reversal)
-- **Doji** — open ≈ close with long wicks (indecision → breakout coming)
-- **Hammer/Inverted hammer** — long lower/upper wick (reversal after trend)
-- **Three soldiers/crows** — 3 consecutive bullish/bearish candles (trend confirmation)
-
-### Multi-Timeframe Confluence
-Signal is stronger when multiple timeframes agree.
+Trade EMA(9)/EMA(21) crossovers on intraday data.
 
 ```
-Score each timeframe (1m, 5m, 1h, daily):
-  - RSI direction (bullish/bearish)
-  - EMA alignment (fast > slow = bullish)
-  - VWAP position (above = bullish)
+Entry:
+  - EMA(9) crosses above EMA(21)                  — bullish crossover
+  - Volume ratio > 1.5                             — volume confirms
+  - Intraday RSI between 40-65                     — not extreme
+  - Spread < 0.15%
 
-Confluence score = count of timeframes agreeing / total
-If confluence >= 0.75 → high conviction signal
+Exit:
+  - EMA(9) crosses below EMA(21)                   — reverse signal
+  - OR profit > +0.8%                              — take profit
+  - OR loss > -0.5%                                — hard stop
+  - OR held > 8 hours                              — time stop
+
+Position: 3% of capital
+Expected: 1-4 trades/day
 ```
 
-### Spread & Liquidity Monitor
-From bid/ask in `ohlcv_1m`:
+### Strategy 4: Volume Breakout — "The Raider"
+
+Sudden volume spike signals institutional activity. Trade the direction.
 
 ```
-spread_z_score = (current_spread - avg_spread_60) / stddev_spread_60
-If z_score > 2.0 → liquidity drying up (danger, don't trade)
-If z_score < -1.0 → tight spread, good execution conditions
+Entry:
+  - 5m volume > 3x average 1h volume               — spike detected
+  - Price moving in same direction as volume         — aligned
+  - Last 3 candles all same direction               — momentum confirmed
+  - Spread < 0.2%
+
+Exit:
+  - First candle closes against entry direction     — exhaustion
+  - OR profit > +1.0%                               — take profit
+  - OR loss > -0.5%                                 — hard stop
+  - OR held > 2 hours                               — time stop
+
+Position: 3% of capital
+Expected: 0-2 trades/day (rare, high conviction)
 ```
 
-## Layer 2: New Data Sources (future phases)
+## xStock-Specific Considerations
 
-### Order Book Depth (requires new poller)
-```
-poller/public/orderbook.py
-- Fetch top 10-20 bid/ask levels every 10s
-- Compute: bid_volume, ask_volume, imbalance ratio
-- Store in new table: orderbook_snapshots
+Stocks differ from crypto:
 
-Indicator: order_book_imbalance = bid_volume / (bid_volume + ask_volume)
-> 0.6 = buying pressure building
-< 0.4 = selling pressure building
-```
+| Factor | Crypto | xStocks |
+|--------|--------|---------|
+| Daily volatility | ~3-5% | ~1-2% |
+| Trading volume pattern | Flat 24/7 | Peaks during US hours (14:30-21:00 UTC) |
+| Event risk | Protocol upgrades, regulatory | Earnings, Fed, macro data |
+| Correlation | BTC dominates | SPY/QQQ dominate, sector-specific |
 
-### Funding Rate (requires futures API)
-```
-Crypto.com perpetual futures funding rate
-- Positive rate = longs paying shorts (bullish sentiment)
-- Negative rate = shorts paying longs (bearish sentiment)
-- Extreme positive (> 0.01%) = overleveraged longs (dump likely)
-- Extreme negative (< -0.01%) = overleveraged shorts (squeeze likely)
-```
+Strategy adjustments for xStocks:
+- **Tighter targets**: 0.3-0.5% (vs 0.5-1.0% for crypto)
+- **More trades**: Lower volatility → more mean reversion opportunities
+- **Time-of-day filter**: Prioritize US market hours for best liquidity
+- **Earnings blackout**: Don't trade individual stocks 1 day before/after earnings
 
-### Open Interest (requires futures API)
-```
-Rising OI + rising price = new money entering (trend continuation)
-Rising OI + falling price = new shorts entering (bearish)
-Falling OI + rising price = short covering (weak rally)
-Falling OI + falling price = long capitulation (bottom forming)
-```
-
-### On-Chain Whale Detection (requires block explorer API)
-```
-Large transfers (> $1M) to exchange = potential sell pressure
-Large transfers from exchange = accumulation
-Exchange balance decreasing = bullish (supply squeeze)
-```
-
-## Layer 3: Day Trading Strategies
-
-### VWAP Reversion — "The Snapper"
-Trade price snapping back to VWAP after deviation.
+## Scan Frequency
 
 ```
-Entry: price < VWAP - (1.5 × ATR) AND volume_spike < 3 (not panic selling)
-Exit: price reaches VWAP OR +1% profit OR -0.5% stop
-Hold time: minutes to hours
-Size: 5% (small, frequent trades)
-Active: all day when regime 20-60
+Every 5 min (ROB-020 new recurring task):
+  Evaluate day trading strategies on indicators_intraday
+  Covers both Hyperliquid xStocks and Hyperliquid crypto
+
+Every hour (ROB-010 existing, unchanged):
+  Evaluate swing strategies on indicators_daily
+  Covers Crypto.com crypto pairs
 ```
 
-### Momentum Scalper — "The Surfer"
-Ride strong momentum candles for quick profit.
+Both run in parallel. Day trades and swing trades tracked separately.
 
-```
-Entry: 3 consecutive bullish 1m candles AND volume_spike > 2 AND rsi_roc > 2
-Exit: first bearish candle close OR +1.5% profit OR -0.8% stop
-Hold time: minutes
-Size: 5%
-Active: when confluence score >= 0.75
-```
+## Day Trading Guardrails
 
-### Breakout Catcher — "The Raider"
-Enter on high/low breakout with volume confirmation.
+| Guardrail | Value | Notes |
+|-----------|-------|-------|
+| Position size | 3-5% | Smaller than swing (10-15%) |
+| Stop loss | 0.3-0.5% | Tighter than swing (3-8%) |
+| Max open day trades | 2 | Plus 3 swing trades allowed separately |
+| Max daily trades | 10 | Prevent fee-burning churn |
+| Min hold time | 5 min | Prevent rapid-fire |
+| Intraday loss limit | 2% | Separate from daily 5% swing limit |
+| Min profit after fees | must > 0.11% | Explicit fee check per trade |
 
-```
-Entry: price > 1h high AND volume_spike > 2.5 AND spread_z_score < 1 (good liquidity)
-Exit: trail via 5m EMA OR +2% profit OR -1% stop
-Hold time: minutes to 1 hour
-Size: 5%
-Active: after squeeze detection (from existing volatility_breakout)
-```
+All configurable via DB (`guardrail:day_*` prefix).
 
-### Liquidation Momentum — "The Sweeper" (requires futures data)
-Trade the momentum created by liquidation cascades.
+## Backtesting
 
-```
-Entry: large liquidation event detected AND price still moving in liquidation direction
-Exit: momentum exhaustion (rsi_roc reversal) OR +3% OR -1.5%
-Hold time: minutes
-Size: 8%
-Active: only during high volatility events
-```
+**Challenge:** No 1m history for Hyperliquid xStocks yet.
 
-## Database Changes
+**Approach:**
+1. Phase 1: Paper test live (no backtest, strategies are simple enough)
+2. Phase 2: After 2 weeks of 1m data, build intraday backtester
+3. Alternative: Fetch historical 1m via ccxt (last 1000 candles ≈ 16 hours) for quick validation
 
-### New tables
-```sql
--- Intraday indicator snapshots at higher frequency (5m aggregation)
-CREATE TABLE trading_platform.indicators_5m (
-    id BIGSERIAL PRIMARY KEY,
-    asset_id INT REFERENCES trading_platform.assets(id),
-    venue_id INT REFERENCES trading_platform.venues(id),
-    timestamp TIMESTAMPTZ NOT NULL,
-    rsi_14 NUMERIC(8,4),
-    rsi_roc NUMERIC(8,4),           -- rate of change
-    ema_9 NUMERIC(20,8),
-    ema_21 NUMERIC(20,8),
-    vwap NUMERIC(20,8),
-    vwap_upper NUMERIC(20,8),
-    vwap_lower NUMERIC(20,8),
-    volume_spike NUMERIC(10,4),
-    spread_z_score NUMERIC(8,4),
-    confluence_score NUMERIC(4,2),   -- 0-1
-    candle_pattern VARCHAR(32),      -- 'engulfing_bull', 'doji', 'hammer', etc.
-    custom JSONB DEFAULT '{}',
-    computed_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (asset_id, venue_id, timestamp)
-);
+## Setup
 
--- Order book snapshots (Layer 2)
-CREATE TABLE trading_platform.orderbook_snapshots (
-    id BIGSERIAL PRIMARY KEY,
-    asset_id INT REFERENCES trading_platform.assets(id),
-    venue_id INT REFERENCES trading_platform.venues(id),
-    timestamp TIMESTAMPTZ NOT NULL,
-    bid_volume NUMERIC(24,2),
-    ask_volume NUMERIC(24,2),
-    imbalance NUMERIC(6,4),         -- bid / (bid + ask)
-    best_bid NUMERIC(20,8),
-    best_ask NUMERIC(20,8),
-    depth_levels INT,
-    UNIQUE (asset_id, venue_id, timestamp)
-);
+### Hyperliquid Wallet
+1. Create EVM wallet (MetaMask or similar)
+2. Bridge USDC to Arbitrum
+3. Deposit USDC to Hyperliquid
+
+### System Configuration
+```bash
+# Add venue
+cli.market add-venue --code hyperliquid --name Hyperliquid --type exchange --ccxt-id hyperliquid
+
+# Add xStock assets
+cli.market add-asset --symbol AAPL --name Apple
+cli.market add-asset --symbol NVDA --name NVIDIA
+cli.market add-asset --symbol TSLA --name Tesla
+cli.market add-asset --symbol SPY --name "S&P 500 ETF"
+
+# Add trading pairs
+cli.market add-trading-pair --venue hyperliquid --base AAPL --quote USDC --pair-symbol "AAPL/USDC" --maker-fee 0.0004 --taker-fee 0.0007
+cli.market add-trading-pair --venue hyperliquid --base SPY --quote USDC --pair-symbol "SPY/USDC" --maker-fee 0.0004 --taker-fee 0.0007
+# ... repeat for each pair
+
+# Add account
+cli.market add-account --venue hyperliquid --name main --type spot --address <wallet-address> --default
+
+# Add credentials to agents/robin/.env
+HYPERLIQUID_WALLET_ADDRESS=0x...
+HYPERLIQUID_PRIVATE_KEY=...
 ```
 
-### Existing table changes
-- `indicators_intraday`: add `rsi_roc`, `vwap_upper`, `vwap_lower`, `volume_spike`, `spread_z_score`, `candle_pattern` to `custom` JSONB (no migration needed)
-
-## Poller Changes
-
-### TA Poller Enhancement
-Add to existing `poller/ta`:
-- Compute 5m aggregated indicators from 1m data
-- Volume spike detection
-- VWAP bands
-- RSI rate of change
-- Candle pattern detection
-- Multi-timeframe confluence score
-
-### New: Order Book Poller (Layer 2)
-```
-poller/public/orderbook.py
-- Fetch order book every 10-30 seconds
-- Compute imbalance ratio
-- Store snapshots (retain 24h)
+### Exchange Wrapper Update
+`core/exchange.py` needs Hyperliquid credential handling:
+```python
+# In CcxtExchange.__init__:
+if eid == "hyperliquid":
+    config["walletAddress"] = settings.hyperliquid_wallet_address
+    config["privateKey"] = settings.hyperliquid_private_key
 ```
 
 ## Implementation Phases
 
-### Phase 1: Intraday Indicators (Layer 1)
-- [ ] Add volume spike, VWAP bands, RSI ROC to TA poller
-- [ ] Add candle pattern detection
-- [ ] Add multi-timeframe confluence scoring
-- [ ] Store in indicators_intraday custom JSONB
-- [ ] Add 5m aggregation view or table
+### Phase 1: Infrastructure + VWAP Reversion (MVP)
+- [ ] Add Hyperliquid credential support to `core/exchange.py` + `core/config.py`
+- [ ] Update public poller to support multiple exchanges (fetch from both Crypto.com + Hyperliquid)
+- [ ] Enhance TA poller: vwap_deviation, volume_spike_5m, rsi_prev_2h, spread_z_score
+- [ ] Create `strategies/vwap_reversion.py` — evaluates on indicators_intraday
+- [ ] Update signal scanner: support 5-min scan for intraday strategies
+- [ ] Add ROB-020 recurring task (5-min scan)
+- [ ] Add day trading guardrails to DB
+- [ ] Seed Hyperliquid venue + xStock pairs + account
+- [ ] Deploy to paper mode
 
-### Phase 2: Day Trading Strategies
-- [ ] Implement VWAP Reversion strategy
-- [ ] Implement Momentum Scalper strategy
-- [ ] Implement Breakout Catcher strategy
-- [ ] Backtest on historical 1m data (need to accumulate first)
-- [ ] Create day trading skills for Robin
+### Phase 2: RSI Bounce + EMA Crossover + xStock Params
+- [ ] Create `strategies/intraday_rsi_bounce.py`
+- [ ] Create `strategies/ema_crossover_scalp.py`
+- [ ] Add 1h RSI aggregation to TA poller
+- [ ] Tune params per asset (stocks vs crypto volatility)
+- [ ] Add time-of-day filter for US market hours
+- [ ] Paper test all strategies
 
-### Phase 3: Signal Scanner Enhancement
-- [ ] Signal scanner checks intraday indicators (not just daily)
-- [ ] Sub-hourly scan option for day trading strategies
-- [ ] Quick decision mode: evaluate + execute in same cycle
+### Phase 3: Volume Breakout + Backtesting
+- [ ] Create `strategies/volume_breakout_intraday.py`
+- [ ] Build 1m data backtester (different from daily backtester)
+- [ ] Backtest on accumulated 1m data (need 2+ weeks)
+- [ ] Param sweep per asset
+- [ ] Create day trading skill for Robin
 
-### Phase 4: Order Book & Futures Data (Layer 2)
-- [ ] Order book poller (10-30s interval)
-- [ ] Order book imbalance indicator
-- [ ] Funding rate fetch (if exchange supports)
-- [ ] Open interest tracking
-- [ ] Migration for new tables
+### Phase 4: Optimization
+- [ ] Compare day trading P&L vs swing trading P&L
+- [ ] Optimize scan frequency (5min vs 10min vs 15min)
+- [ ] Add earnings calendar blackout for individual stocks
+- [ ] Time-of-day performance analysis
+- [ ] Tune position sizing per strategy per asset
 
-### Phase 5: Advanced Strategies (Layer 2)
-- [ ] Liquidation Momentum strategy
-- [ ] Order flow strategy
-- [ ] On-chain whale detection (external API)
+### Phase 5: Advanced (future)
+- [ ] Perpetual futures strategies (funding rate arbitrage)
+- [ ] Order book poller + imbalance indicator
+- [ ] Cross-venue arbitrage (Hyperliquid vs Crypto.com price differences)
+- [ ] On-chain whale detection
 
-## Guardrail Considerations
+## Risk Considerations
 
-Day trading needs different guardrails than swing trading:
-- **Smaller position size** (5% vs 10-15%) — more trades, less per trade
-- **Tighter stops** (0.5-1.5% vs 3-8%) — quick exit on wrong direction
-- **Higher trade frequency** — may need MAX_DAILY_TRADES limit
-- **Intraday loss limit** — separate from daily loss (stop after X% intraday loss)
-- **Minimum hold time** — prevent rapid-fire trades that rack up fees
+**Fee advantage is the edge:** At 0.11% round-trip, strategies that would lose money on Crypto.com are profitable on Hyperliquid. But the edge is thin — slippage, spread widening, or poor timing can erase it.
+
+**Overtrading:** More trades ≠ more profit. Max 10 trades/day guardrail prevents fee-burning churn.
+
+**xStock liquidity:** xStocks are newer than crypto pairs. Liquidity may be thin during off-US-hours. Spread guard is critical.
+
+**DEX risk:** Hyperliquid is a DEX — smart contract risk, bridge risk (USDC on Arbitrum). Not the same custody guarantees as a centralized exchange.
+
+**Poller dependency:** If the poller goes down, intraday indicators go stale. Day trading strategies must detect stale data (> 5min) and halt.
 
 ## Dependencies
 
-- ES-0012 (trading toolkit) — must be complete
-- Sufficient 1m data history (1-2 weeks of poller data for backtesting)
-- Public poller running continuously for real-time indicators
+- ES-0012 (trading toolkit) — complete ✅
+- Hyperliquid wallet + USDC funding — required before Phase 1
+- Public poller enhanced for multi-exchange — Phase 1
+- 1m data accumulation for Hyperliquid pairs — starts in Phase 1
