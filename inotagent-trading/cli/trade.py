@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from cli import error, output
 from core.db import schema, sync_connect
-from guardrails import validate_order
+from guardrails import load_guardrail_config, validate_order
 
 
 def _resolve_ids(conn, s: str, symbol: str, venue: str):
@@ -69,6 +69,14 @@ def _get_portfolio_state(conn, s: str) -> tuple[Decimal, int, Decimal]:
     return portfolio_value, open_positions, daily_pnl_pct
 
 
+def _get_allowed_pairs(conn, s: str) -> list[str]:
+    """Load active trading pair symbols from DB."""
+    cur = conn.execute(
+        f"SELECT pair_symbol FROM {s}.trading_pairs WHERE is_active = true AND is_current = true"
+    )
+    return [r["pair_symbol"] for r in cur.fetchall()]
+
+
 def cmd_buy(args):
     s = schema()
     with sync_connect() as conn:
@@ -80,7 +88,17 @@ def cmd_buy(args):
         if args.stop_loss and args.price:
             stop_loss_pct = abs(args.price - args.stop_loss) / args.price
 
-        pair_symbol = f"{args.symbol.upper()}/USDT"  # TODO: resolve from trading_pairs
+        # Resolve pair symbol from trading_pairs table
+        cur = conn.execute(
+            f"""SELECT tp.pair_symbol FROM {s}.trading_pairs tp
+                WHERE tp.base_asset_id = %s AND tp.venue_id = %s AND tp.is_current = true""",
+            (asset_id, venue_id),
+        )
+        pair_row = cur.fetchone()
+        pair_symbol = pair_row["pair_symbol"] if pair_row else f"{args.symbol.upper()}/USDT"
+
+        allowed_pairs = _get_allowed_pairs(conn, s)
+        guardrail_config = load_guardrail_config(conn, s)
         check = validate_order(
             pair_symbol=pair_symbol,
             side="buy",
@@ -89,6 +107,8 @@ def cmd_buy(args):
             open_position_count=open_positions,
             daily_pnl_pct=daily_pnl_pct,
             stop_loss_pct=stop_loss_pct,
+            allowed_pairs=allowed_pairs,
+            config=guardrail_config,
         )
 
         if not check.passed:

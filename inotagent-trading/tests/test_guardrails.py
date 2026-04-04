@@ -7,15 +7,15 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from guardrails import (
-    ALLOWED_PAIRS,
-    MAX_DAILY_LOSS_PCT,
-    MAX_OPEN_POSITIONS,
-    MAX_POSITION_PCT,
-    MAX_STOP_LOSS_PCT,
-    MIN_TRADE_SIZE_USD,
-    validate_order,
-)
+from guardrails import DEFAULTS, validate_order
+
+# Test uses DEFAULTS as the operational config (no DB in tests)
+ALLOWED_PAIRS = ["CRO/USDT"]
+MAX_POSITION_PCT = DEFAULTS["max_position_pct"]
+MAX_DAILY_LOSS_PCT = DEFAULTS["max_daily_loss_pct"]
+MAX_OPEN_POSITIONS = DEFAULTS["max_open_positions"]
+MAX_STOP_LOSS_PCT = DEFAULTS["max_stop_loss_pct"]
+MIN_TRADE_SIZE_USD = DEFAULTS["min_trade_size_usd"]
 
 
 def _valid_order(**overrides):
@@ -28,6 +28,7 @@ def _valid_order(**overrides):
         "open_position_count": 0,
         "daily_pnl_pct": Decimal("0"),
         "stop_loss_pct": Decimal("0.05"),
+        "allowed_pairs": ALLOWED_PAIRS,
     }
     defaults.update(overrides)
     return defaults
@@ -52,14 +53,14 @@ class TestGuardrailsPass:
         result = validate_order(**_valid_order())
         snap = result.snapshot
         assert snap["max_position_pct"] == float(MAX_POSITION_PCT)
-        assert snap["allowed_pairs"] == ALLOWED_PAIRS
+        assert "max_open_positions" in snap
 
 
 class TestGuardrailsFail:
     def test_disallowed_pair(self):
         result = validate_order(**_valid_order(pair_symbol="DOGE/USDT"))
         assert not result.passed
-        assert any("not in allowed" in v for v in result.violations)
+        assert any("not in active" in v for v in result.violations)
 
     def test_below_min_trade_size(self):
         result = validate_order(**_valid_order(amount_usd=Decimal("1")))
@@ -130,3 +131,64 @@ class TestEdgeCases:
         result = validate_order(**_valid_order(daily_pnl_pct=-MAX_DAILY_LOSS_PCT))
         # At exactly the limit, not exceeded
         assert result.passed
+
+    def test_multi_pair_allowed(self):
+        """Multiple pairs from DB — all should pass."""
+        multi_pairs = ["CRO/USDT", "BTC/USDT", "ETH/USDT"]
+        for pair in multi_pairs:
+            result = validate_order(**_valid_order(pair_symbol=pair, allowed_pairs=multi_pairs))
+            assert result.passed, f"{pair} should be allowed"
+
+    def test_no_allowed_pairs_skips_check(self):
+        """If allowed_pairs is None, pair check is skipped."""
+        result = validate_order(**_valid_order(pair_symbol="DOGE/USDT", allowed_pairs=None))
+        assert result.passed  # No pair violation when check is skipped
+
+
+class TestCeilingEnforcement:
+    def test_db_cannot_exceed_hard_ceiling(self):
+        """DB config with extreme values gets clamped to hard ceilings."""
+        from guardrails import HARD_MAX_POSITION_PCT, _enforce_ceilings
+        extreme_config = {
+            "max_position_pct": Decimal("0.99"),  # 99% — way above ceiling
+            "max_daily_loss_pct": Decimal("0.50"),
+            "max_open_positions": 100,
+            "max_stop_loss_pct": Decimal("0.50"),
+            "min_trade_size_usd": Decimal("0.01"),  # below floor
+            "human_approval_threshold": Decimal("0.99"),
+        }
+        clamped = _enforce_ceilings(extreme_config)
+        assert clamped["max_position_pct"] == HARD_MAX_POSITION_PCT
+        assert clamped["max_open_positions"] == 10
+        assert clamped["max_stop_loss_pct"] == Decimal("0.15")
+        assert clamped["min_trade_size_usd"] == Decimal("1.0")
+        assert clamped["human_approval_threshold"] == Decimal("0.50")
+
+    def test_db_within_ceiling_passes_through(self):
+        """DB config within bounds is used as-is."""
+        from guardrails import _enforce_ceilings
+        normal_config = {
+            "max_position_pct": Decimal("0.15"),
+            "max_daily_loss_pct": Decimal("0.03"),
+            "max_open_positions": 5,
+            "max_stop_loss_pct": Decimal("0.10"),
+            "min_trade_size_usd": Decimal("10.0"),
+            "human_approval_threshold": Decimal("0.30"),
+        }
+        clamped = _enforce_ceilings(normal_config)
+        assert clamped == normal_config  # No changes
+
+    def test_custom_config_used_in_validation(self):
+        """Passing custom config changes the effective limits."""
+        relaxed = dict(DEFAULTS)
+        relaxed["max_position_pct"] = Decimal("0.20")
+        # 150/1000 = 15% — would fail with default 10% but passes with 20%
+        result = validate_order(**_valid_order(amount_usd=Decimal("150"), config=relaxed))
+        assert result.passed
+
+    def test_snapshot_captures_effective_config(self):
+        """Snapshot should reflect the actual limits used (after ceiling enforcement)."""
+        result = validate_order(**_valid_order())
+        snap = result.snapshot
+        assert snap["max_position_pct"] == float(DEFAULTS["max_position_pct"])
+        assert snap["max_open_positions"] == DEFAULTS["max_open_positions"]
