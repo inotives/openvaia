@@ -148,7 +148,7 @@ def cmd_open(args):
         expired_count = len([c for c in active_cycles if c.get("status") == "expired_pending"])
 
         # Check entry conditions
-        can_open, reason = should_open_cycle(
+        can_open, reason, is_defensive = should_open_cycle(
             regime, rsi, atr_pct, active_count > 0, expired_count, params
         )
         if not can_open:
@@ -202,7 +202,8 @@ def cmd_open(args):
         # Create cycle
         cycle = create_cycle(
             args.asset.upper(), args.venue, current_price, atr,
-            capital, regime, params, sentiment_score=sentiment_score, maker_fee=maker_fee,
+            capital, regime, params, sentiment_score=sentiment_score,
+            maker_fee=maker_fee, defensive=is_defensive,
         )
         if not cycle:
             error("Could not create grid cycle (extreme volatility?)")

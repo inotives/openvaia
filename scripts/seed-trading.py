@@ -166,6 +166,117 @@ STRATEGIES = [
             "position": {"capital_per_cycle_pct": 10},
         },
     },
+    {
+        "name": "eth_dca_grid", "type": "dca_grid", "asset": "ETH",
+        "params": {
+            "mode": {
+                "default": "adaptive_fifo",
+                "auto_select_by_regime": True,
+                "batch_regime_max": 30,
+                "fifo_regime_min": 30,
+                "regime_pause_threshold": 65,
+                "regime_resume_threshold": 55,
+            },
+            "entry": {
+                "max_regime_score": 65,
+                "rsi_entry_max": 60,
+                "max_atr_pct": 8.0,
+                "defensive_mode_enabled": True,
+                "defensive_rsi_oversold": 25,
+            },
+            "grid": {
+                "num_levels": 5,
+                "weights": [1, 1, 2, 3, 3],
+                "volatility_regimes": {
+                    "low": {"atr_mult": 0.4, "profit_target": 1.5},
+                    "normal": {"atr_mult": 0.5, "profit_target": 2.0},
+                    "high": {"atr_mult": 0.7, "profit_target": 2.5},
+                },
+            },
+            "exit": {
+                "stop_loss_spacing_mult": 1.0,
+                "stop_loss_type": "exchange_trigger",
+                "max_cycle_duration_hours": 72,
+                "max_expired_pending_per_asset": 2,
+                "cooldown_minutes": 30,
+            },
+            "position": {"capital_per_cycle_pct": 10},
+        },
+    },
+    {
+        "name": "sol_dca_grid", "type": "dca_grid", "asset": "SOL",
+        "params": {
+            "mode": {
+                "default": "adaptive_fifo",
+                "auto_select_by_regime": True,
+                "batch_regime_max": 30,
+                "fifo_regime_min": 30,
+                "regime_pause_threshold": 65,
+                "regime_resume_threshold": 55,
+            },
+            "entry": {
+                "max_regime_score": 65,
+                "rsi_entry_max": 60,
+                "max_atr_pct": 10.0,
+                "defensive_mode_enabled": True,
+                "defensive_rsi_oversold": 25,
+            },
+            "grid": {
+                "num_levels": 5,
+                "weights": [1, 1, 2, 3, 3],
+                "volatility_regimes": {
+                    "low": {"atr_mult": 0.5, "profit_target": 2.0},
+                    "normal": {"atr_mult": 0.6, "profit_target": 2.5},
+                    "high": {"atr_mult": 0.8, "profit_target": 3.0},
+                },
+            },
+            "exit": {
+                "stop_loss_spacing_mult": 1.0,
+                "stop_loss_type": "exchange_trigger",
+                "max_cycle_duration_hours": 72,
+                "max_expired_pending_per_asset": 2,
+                "cooldown_minutes": 30,
+            },
+            "position": {"capital_per_cycle_pct": 8},
+        },
+    },
+    {
+        "name": "xrp_dca_grid", "type": "dca_grid", "asset": "XRP",
+        "params": {
+            "mode": {
+                "default": "adaptive_fifo",
+                "auto_select_by_regime": True,
+                "batch_regime_max": 30,
+                "fifo_regime_min": 30,
+                "regime_pause_threshold": 65,
+                "regime_resume_threshold": 55,
+            },
+            "entry": {
+                "max_regime_score": 65,
+                "rsi_entry_max": 60,
+                "max_atr_pct": 10.0,
+                "defensive_mode_enabled": True,
+                "defensive_rsi_oversold": 25,
+            },
+            "grid": {
+                "num_levels": 5,
+                "weights": [1, 1, 2, 3, 3],
+                "volatility_regimes": {
+                    "low": {"atr_mult": 0.5, "profit_target": 2.0},
+                    "normal": {"atr_mult": 0.6, "profit_target": 3.0},
+                    "high": {"atr_mult": 0.8, "profit_target": 3.5},
+                },
+            },
+            "exit": {
+                "stop_loss_spacing_mult": 1.0,
+                "stop_loss_type": "exchange_trigger",
+                "max_cycle_duration_hours": 72,
+                "max_expired_pending_per_asset": 2,
+                "cooldown_minutes": 30,
+            },
+            "position": {"capital_per_cycle_pct": 8},
+        },
+    },
 ]
 
 

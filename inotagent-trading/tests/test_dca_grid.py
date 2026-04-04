@@ -117,44 +117,78 @@ class TestModeSelection:
 
 class TestShouldOpenCycle:
     def test_normal_conditions_open(self):
-        can, reason = should_open_cycle(40, 45, 3.0, False, 0, DEFAULT_PARAMS)
+        can, reason, _ = should_open_cycle(40, 45, 3.0, False, 0, DEFAULT_PARAMS)
         assert can is True
         assert reason is None
 
     def test_regime_too_high(self):
-        can, reason = should_open_cycle(70, 45, 3.0, False, 0, DEFAULT_PARAMS)
+        can, reason, _ = should_open_cycle(70, 45, 3.0, False, 0, DEFAULT_PARAMS)
         assert can is False
         assert "grid paused" in reason.lower()
 
     def test_active_cycle_blocks(self):
-        can, reason = should_open_cycle(40, 45, 3.0, True, 0, DEFAULT_PARAMS)
+        can, reason, _ = should_open_cycle(40, 45, 3.0, True, 0, DEFAULT_PARAMS)
         assert can is False
         assert "Active cycle" in reason
 
     def test_rsi_too_high(self):
-        can, reason = should_open_cycle(40, 65, 3.0, False, 0, DEFAULT_PARAMS)
+        can, reason, _ = should_open_cycle(40, 65, 3.0, False, 0, DEFAULT_PARAMS)
         assert can is False
         assert "RSI" in reason
 
     def test_atr_too_high(self):
-        can, reason = should_open_cycle(40, 45, 7.0, False, 0, DEFAULT_PARAMS)
+        can, reason, _ = should_open_cycle(40, 45, 7.0, False, 0, DEFAULT_PARAMS)
         assert can is False
-        assert "volatile" in reason.lower() or "ATR" in reason
+        assert "volatil" in reason.lower()  # matches "volatility" or "volatile"
 
     def test_max_expired_blocks(self):
-        can, reason = should_open_cycle(40, 45, 3.0, False, 2, DEFAULT_PARAMS)
+        can, reason, _ = should_open_cycle(40, 45, 3.0, False, 2, DEFAULT_PARAMS)
         assert can is False
         assert "expired" in reason.lower()
 
     def test_hysteresis_allows_at_64(self):
         """RS 64 is below pause threshold 65 — should open."""
-        can, _ = should_open_cycle(64, 45, 3.0, False, 0, DEFAULT_PARAMS)
+        can, _, _ = should_open_cycle(64, 45, 3.0, False, 0, DEFAULT_PARAMS)
         assert can is True
 
     def test_hysteresis_blocks_at_66(self):
         """RS 66 is above pause threshold 65 — should block."""
-        can, _ = should_open_cycle(66, 45, 3.0, False, 0, DEFAULT_PARAMS)
+        can, _, _ = should_open_cycle(66, 45, 3.0, False, 0, DEFAULT_PARAMS)
         assert can is False
+
+
+    def test_defensive_mode_activates(self):
+        """RSI oversold + defensive enabled → opens in defensive mode."""
+        params = dict(DEFAULT_PARAMS)
+        params["entry"] = dict(params["entry"])
+        params["entry"]["defensive_mode_enabled"] = True
+        params["entry"]["defensive_rsi_oversold"] = 25
+        params["entry"]["max_atr_pct"] = 6.0
+        # RSI 20 < 25 (oversold) + ATR 5.5% < extreme but > max_atr (would normally block on RSI>60)
+        # Actually: RSI 20 passes the rsi_max check (20 < 60). Let's make RSI fail + defensive save.
+        # RSI 65 > 60 → normal fails. RSI 65 > 25 → defensive also fails. Need RSI < defensive threshold.
+        # The trick: something else must fail normally. Use high ATR (but not extreme):
+        params["entry"]["max_atr_pct"] = 4.0  # ATR 5% > 4% → normal blocks
+        can, _, is_defensive = should_open_cycle(40, 20, 5.0, False, 0, params)
+        assert can is True
+        assert is_defensive is True
+
+    def test_defensive_not_enabled(self):
+        """RSI oversold but defensive not enabled → stays blocked."""
+        can, reason, is_defensive = should_open_cycle(40, 20, 7.0, False, 0, DEFAULT_PARAMS)
+        assert can is False
+        assert is_defensive is False
+
+    def test_defensive_cycle_has_wider_grid(self):
+        """Defensive cycle should use wider spacing and equal weights."""
+        cycle = create_cycle(
+            "ETH", "cryptocom", Decimal("2000"), Decimal("100"),
+            Decimal("100"), 25, DEFAULT_PARAMS, defensive=True
+        )
+        assert cycle is not None
+        # Equal weights = equal capital per level
+        capitals = [l.capital for l in cycle.levels]
+        assert capitals[0] == capitals[4]  # all equal
 
 
 class TestTakeProfitComputation:

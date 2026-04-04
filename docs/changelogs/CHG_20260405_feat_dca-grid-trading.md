@@ -58,5 +58,15 @@ DCA Grid trading with two modes (Batch Grid + Adaptive FIFO Grid), regime-based 
 - [x] Public poller: continues to next pair on failure instead of aborting cycle
 - [x] Updated all Robin tasks for DCA grid as primary strategy + UTC times
 - [x] Updated skill chains: trading_analysis + trading_execution use new skill names
+
+### Phase 4: Multi-Asset + Defensive Mode
+- [x] Seeded grid strategies: eth_dca_grid, sol_dca_grid, xrp_dca_grid with per-asset tuning
+- [x] Per-asset params: ETH (8% ATR max, 1.5-2.5% target), SOL/XRP (10% ATR, 2-3.5% target, 8% capital)
+- [x] Defensive grid mode: when normal entry fails but RSI deeply oversold, opens wider/safer grid
+- [x] Defensive overrides: 0.8x ATR spacing, 2.5% target, equal weights [1,1,1,1,1]
+- [x] should_open_cycle returns (can, reason, is_defensive) — 3 values
+- [x] create_cycle accepts defensive=True for wider params
+- [x] BTC defensive enabled in seed script
+- [x] Tests: 30 grid tests (3 new: defensive activate, not enabled, wider grid)
 - [x] Entrypoint: removed migration from Docker (run from host only via `make local-migrate`)
 - [x] `clean-slate`: runs migrations from host before deploying containers

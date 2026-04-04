@@ -221,8 +221,12 @@ def should_open_cycle(
     has_active_cycle: bool,
     expired_pending_count: int,
     params: dict,
-) -> tuple[bool, str | None]:
-    """Check if a new grid cycle should open. Returns (should_open, reason_if_not)."""
+) -> tuple[bool, str | None, bool]:
+    """Check if a new grid cycle should open.
+
+    Returns (should_open, reason_if_not, is_defensive).
+    Defensive mode: when normal entry fails but RSI is deeply oversold — opens wider, safer grid.
+    """
     mode_params = params.get("mode", {})
     entry_params = params.get("entry", {})
     exit_params = params.get("exit", {})
@@ -230,28 +234,46 @@ def should_open_cycle(
     pause_threshold = mode_params.get("regime_pause_threshold", 65)
     max_expired = exit_params.get("max_expired_pending_per_asset", 2)
 
+    # Hard blocks — no override even in defensive mode
     if regime_score >= pause_threshold:
-        return False, f"Regime {regime_score:.0f} >= {pause_threshold} (grid paused, trend active)"
+        return False, f"Regime {regime_score:.0f} >= {pause_threshold} (grid paused, trend active)", False
 
     if has_active_cycle:
-        return False, "Active cycle already open"
+        return False, "Active cycle already open", False
 
     if expired_pending_count >= max_expired:
-        return False, f"Max expired_pending cycles reached ({expired_pending_count}/{max_expired})"
-
-    rsi_max = entry_params.get("rsi_entry_max", 60)
-    if rsi is not None and rsi > rsi_max:
-        return False, f"RSI {rsi:.1f} > {rsi_max} (overbought)"
-
-    max_atr = entry_params.get("max_atr_pct", 6.0)
-    if atr_pct >= max_atr:
-        return False, f"ATR% {atr_pct:.1f} >= {max_atr} (too volatile)"
+        return False, f"Max expired_pending cycles reached ({expired_pending_count}/{max_expired})", False
 
     volatility = get_volatility_regime(atr_pct)
     if volatility == "extreme":
-        return False, "Extreme volatility — no grid entry"
+        return False, "Extreme volatility — no grid entry", False
 
-    return True, None
+    # Normal entry check
+    rsi_max = entry_params.get("rsi_entry_max", 60)
+    max_atr = entry_params.get("max_atr_pct", 6.0)
+
+    normal_pass = True
+    normal_reason = None
+
+    if rsi is not None and rsi > rsi_max:
+        normal_pass = False
+        normal_reason = f"RSI {rsi:.1f} > {rsi_max} (overbought)"
+
+    if atr_pct >= max_atr:
+        normal_pass = False
+        normal_reason = f"ATR% {atr_pct:.1f} >= {max_atr} (too volatile)"
+
+    if normal_pass:
+        return True, None, False
+
+    # Normal entry failed — check defensive mode
+    defensive_enabled = entry_params.get("defensive_mode_enabled", False)
+    defensive_rsi = entry_params.get("defensive_rsi_oversold", 30)
+
+    if defensive_enabled and rsi is not None and rsi < defensive_rsi:
+        return True, None, True  # defensive mode activated
+
+    return False, normal_reason, False
 
 
 def select_grid_mode(regime_score: float, params: dict) -> str:
@@ -274,8 +296,23 @@ def create_cycle(
     params: dict,
     sentiment_score: float = 0.0,
     maker_fee: Decimal = Decimal("0.0024"),
+    defensive: bool = False,
 ) -> GridCycle | None:
-    """Create a new grid cycle with computed levels. Returns None if conditions fail."""
+    """Create a new grid cycle with computed levels. Returns None if conditions fail.
+
+    If defensive=True, uses wider spacing, higher profit target, equal weights.
+    """
+    if defensive:
+        # Override grid params for defensive mode
+        params = dict(params)
+        params["grid"] = dict(params.get("grid", {}))
+        params["grid"]["volatility_regimes"] = {
+            "low": {"atr_mult": 0.8, "profit_target": 2.5},
+            "normal": {"atr_mult": 0.8, "profit_target": 2.5},
+            "high": {"atr_mult": 0.8, "profit_target": 2.5},
+        }
+        params["grid"]["weights"] = [1, 1, 1, 1, 1]  # equal, conservative
+
     levels, stop_loss, profit_target = compute_grid_levels(
         current_price, atr, capital_for_cycle, params, maker_fee
     )
