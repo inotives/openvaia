@@ -269,17 +269,39 @@ bootstrap:
 trading-build:
 	docker compose build poller-public poller-private poller-ta
 
+trading-poller-start:
+	@echo "Starting pollers locally (Postgres on localhost:$${EXTERNAL_POSTGRES_PORT:-5445})..."
+	@cd inotagent-trading && $(TRADING_DB_ENV) nohup uv run python -m poller.public --interval 60 > /tmp/poller-public.log 2>&1 & echo $$! > /tmp/poller-public.pid
+	@cd inotagent-trading && $(TRADING_DB_ENV) nohup uv run python -m poller.private --interval 60 > /tmp/poller-private.log 2>&1 & echo $$! > /tmp/poller-private.pid
+	@cd inotagent-trading && $(TRADING_DB_ENV) nohup uv run python -m poller.ta --interval 60 > /tmp/poller-ta.log 2>&1 & echo $$! > /tmp/poller-ta.pid
+	@sleep 2 && echo "Pollers started" && $(MAKE) trading-poller-status
+
+trading-poller-stop:
+	@for p in public private ta; do \
+		if [ -f /tmp/poller-$$p.pid ]; then \
+			kill $$(cat /tmp/poller-$$p.pid) 2>/dev/null && echo "Stopped poller-$$p" || echo "poller-$$p not running"; \
+			rm -f /tmp/poller-$$p.pid; \
+		fi; \
+	done
+
+trading-poller-status:
+	@for p in public private ta; do \
+		if [ -f /tmp/poller-$$p.pid ] && kill -0 $$(cat /tmp/poller-$$p.pid) 2>/dev/null; then \
+			echo "poller-$$p: running (PID $$(cat /tmp/poller-$$p.pid))"; \
+		else \
+			echo "poller-$$p: stopped"; \
+		fi; \
+	done
+
+trading-poller-logs:
+	@tail -20 /tmp/poller-public.log /tmp/poller-private.log /tmp/poller-ta.log 2>/dev/null || echo "No poller logs"
+
+# Docker pollers (alternative — use when deploying fully in Docker)
 trading-start:
 	docker compose --profile trading up -d
 
 trading-stop:
 	docker compose --profile trading stop
-
-trading-status:
-	cd inotagent-trading && uv run python -c "import json; print(json.dumps(json.load(open('.poller_status.json')), indent=2))" 2>/dev/null || echo "No poller status file"
-
-trading-logs:
-	docker compose logs --tail=40 poller-public poller-private poller-ta
 
 trading-migrate: local-migrate
 

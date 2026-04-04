@@ -50,6 +50,11 @@ TRADING_PAIRS = [
     {"base": "XRP", "quote": "USD", "pair_symbol": "XRP/USD", "maker_fee": "0.0025", "taker_fee": "0.005"},
 ]
 
+# Default account on Crypto.com Exchange
+ACCOUNTS = [
+    {"venue": "cryptocom", "name": "robin vault", "account_type": "spot", "is_default": True},
+]
+
 # ── Strategies (v3, tuned on 6-month data) ───────────────────────────────────
 
 STRATEGIES = [
@@ -203,6 +208,25 @@ def main():
                         (cc_venue["id"], base["id"], quote["id"], tp["pair_symbol"], tp["maker_fee"], tp["taker_fee"]),
                     )
                     print(f"  OK   pair {tp['pair_symbol']}")
+
+        # ── Accounts ──
+        for acc in ACCOUNTS:
+            venue_row = conn.execute(f"SELECT id FROM {s}.venues WHERE code = %s", (acc["venue"],)).fetchone()
+            if not venue_row:
+                continue
+            cur = conn.execute(
+                f"SELECT 1 FROM {s}.accounts WHERE venue_id = %s AND name = %s",
+                (venue_row["id"], acc["name"]),
+            )
+            if cur.fetchone():
+                print(f"  SKIP account {acc['venue']}:{acc['name']}")
+            else:
+                conn.execute(
+                    f"""INSERT INTO {s}.accounts (venue_id, name, account_type, is_default, created_by)
+                        VALUES (%s, %s, %s, %s, 'seed')""",
+                    (venue_row["id"], acc["name"], acc["account_type"], acc["is_default"]),
+                )
+                print(f"  OK   account {acc['venue']}:{acc['name']}")
 
         # ── Strategies ──
         if force:
