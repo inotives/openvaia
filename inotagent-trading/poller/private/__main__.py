@@ -190,7 +190,7 @@ class PrivatePoller(BasePoller):
 
 def main():
     parser = argparse.ArgumentParser(description="Private data poller")
-    parser.add_argument("--exchange", default=settings.private_poller_exchange)
+    parser.add_argument("--exchange", default=settings.default_exchange)
     parser.add_argument("--interval", type=int, default=settings.private_poller_interval)
     args = parser.parse_args()
 

@@ -29,7 +29,7 @@ class CcxtExchange:
     """Live exchange via ccxt."""
 
     def __init__(self, exchange_id: str | None = None) -> None:
-        eid = exchange_id or settings.private_poller_exchange
+        eid = exchange_id or settings.default_exchange
         exchange_class = getattr(ccxt, eid, None)
         if exchange_class is None:
             raise ValueError(f"Unknown exchange: {eid}")
