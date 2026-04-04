@@ -30,6 +30,7 @@ class PrivatePoller(BasePoller):
         super().__init__(interval=interval)
         self.exchange_id = exchange_id
         self.exchange: CcxtExchange | None = None
+        self._last_fee_sync: datetime | None = None
 
     async def setup(self) -> None:
         self.exchange = CcxtExchange(self.exchange_id)
@@ -37,10 +38,11 @@ class PrivatePoller(BasePoller):
         logger.info(f"[private] Exchange: {self.exchange_id}")
 
     async def cycle(self) -> None:
-        """Sync balances, detect fills, check anomalies."""
+        """Sync balances, detect fills, check anomalies, sync fees (daily)."""
         await self._sync_balances()
         await self._sync_orders()
         await self._check_anomalies()
+        await self._sync_fees_if_due()
 
     async def _sync_balances(self) -> None:
         """Fetch exchange balances and update DB.
@@ -183,6 +185,64 @@ class PrivatePoller(BasePoller):
             )
             if today_pnl and today_pnl["total"] < Decimal("-50"):  # Hardcoded threshold for now
                 logger.warning(f"[private] ANOMALY: Daily loss ${today_pnl['total']}")
+
+    async def _sync_fees_if_due(self) -> None:
+        """Sync trading pair fees from exchange. Runs once per day."""
+        now = datetime.now(timezone.utc)
+        if self._last_fee_sync and self._last_fee_sync.date() == now.date():
+            return
+
+        s = schema()
+        try:
+            self.exchange.exchange.load_markets()
+        except Exception as e:
+            logger.error(f"[private] Failed to load markets for fee sync: {e}")
+            return
+
+        async with async_conn() as conn:
+            venue_row = await conn.fetchrow(
+                f"SELECT id FROM {s}.venues WHERE code = $1 AND deleted_at IS NULL",
+                self.exchange_id,
+            )
+            if not venue_row:
+                return
+            venue_id = venue_row["id"]
+
+            # Get our active trading pairs for this venue
+            pairs = await conn.fetch(
+                f"""SELECT id, pair_symbol, maker_fee, taker_fee
+                    FROM {s}.trading_pairs
+                    WHERE venue_id = $1 AND is_active = true AND is_current = true""",
+                venue_id,
+            )
+
+            updated = 0
+            for pair in pairs:
+                market = self.exchange.exchange.market(pair["pair_symbol"])
+                if not market:
+                    continue
+
+                new_maker = Decimal(str(market.get("maker") or 0))
+                new_taker = Decimal(str(market.get("taker") or 0))
+
+                # Only update if changed
+                if new_maker != pair["maker_fee"] or new_taker != pair["taker_fee"]:
+                    await conn.execute(
+                        f"""UPDATE {s}.trading_pairs
+                            SET maker_fee = $1, taker_fee = $2
+                            WHERE id = $3""",
+                        new_maker, new_taker, pair["id"],
+                    )
+                    logger.info(
+                        f"[private] Fee update {pair['pair_symbol']}: "
+                        f"maker {pair['maker_fee']}→{new_maker}, taker {pair['taker_fee']}→{new_taker}"
+                    )
+                    updated += 1
+
+            if updated:
+                logger.info(f"[private] Updated fees for {updated} pairs")
+
+        self._last_fee_sync = now
 
     async def teardown(self) -> None:
         await close_async_pool()

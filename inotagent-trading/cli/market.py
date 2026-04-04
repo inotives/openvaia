@@ -591,6 +591,62 @@ def cmd_compute_daily_ta(args):
     output({"status": "ok", "assets_computed": count})
 
 
+def cmd_sync_fees(args):
+    """Sync trading pair fees from exchange API."""
+    from core.exchange import CcxtExchange
+
+    s = schema()
+    with sync_connect() as conn:
+        # Find exchange venues
+        if args.venue:
+            cur = conn.execute(
+                f"SELECT id, code, ccxt_id FROM {s}.venues WHERE code = %s AND type = 'exchange'",
+                (args.venue,),
+            )
+        else:
+            cur = conn.execute(
+                f"SELECT id, code, ccxt_id FROM {s}.venues WHERE type = 'exchange' AND is_active = true AND deleted_at IS NULL"
+            )
+        venues = cur.fetchall()
+
+        total_updated = 0
+        for venue in venues:
+            try:
+                ex = CcxtExchange(venue["ccxt_id"] or venue["code"])
+                ex.exchange.load_markets()
+            except Exception as e:
+                output({"warning": f"Failed to load markets for {venue['code']}: {e}"})
+                continue
+
+            cur = conn.execute(
+                f"""SELECT id, pair_symbol, maker_fee, taker_fee
+                    FROM {s}.trading_pairs
+                    WHERE venue_id = %s AND is_active = true AND is_current = true""",
+                (venue["id"],),
+            )
+            pairs = cur.fetchall()
+
+            for pair in pairs:
+                try:
+                    market = ex.exchange.market(pair["pair_symbol"])
+                except Exception:
+                    continue
+
+                new_maker = Decimal(str(market.get("maker") or 0))
+                new_taker = Decimal(str(market.get("taker") or 0))
+
+                if new_maker != pair["maker_fee"] or new_taker != pair["taker_fee"]:
+                    conn.execute(
+                        f"UPDATE {s}.trading_pairs SET maker_fee = %s, taker_fee = %s WHERE id = %s",
+                        (new_maker, new_taker, pair["id"]),
+                    )
+                    total_updated += 1
+
+            conn.commit()
+
+    output({"status": "ok", "pairs_updated": total_updated})
+
+
 def cmd_poller_status(args):
     """Read poller health status from JSON file."""
     from pathlib import Path
@@ -678,6 +734,9 @@ def main():
     p = sub.add_parser("backfill-daily-ta")
     p.add_argument("--asset", required=True)
 
+    p = sub.add_parser("sync-fees")
+    p.add_argument("--venue", default=None, help="Venue to sync (default: all exchange venues)")
+
     sub.add_parser("coverage")
     sub.add_parser("poller-status")
 
@@ -699,6 +758,7 @@ def main():
         "fetch-daily": cmd_fetch_daily,
         "compute-daily-ta": cmd_compute_daily_ta,
         "backfill-daily-ta": cmd_backfill_daily_ta,
+        "sync-fees": cmd_sync_fees,
         "coverage": cmd_coverage,
         "poller-status": cmd_poller_status,
     }

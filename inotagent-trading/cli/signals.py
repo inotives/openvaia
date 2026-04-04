@@ -153,9 +153,43 @@ def cmd_scan(args):
                 })
                 continue
 
-            # ── Build actionable signal ──
+            # ── Fee profitability check ──
+            # Ensure expected profit covers round-trip fees
             exit_params = params.get("exit", {})
             price = float(daily.get("close") or 0)
+
+            if price > 0:
+                # Look up fees from trading_pairs table
+                cur = conn.execute(
+                    f"""SELECT tp.maker_fee, tp.taker_fee FROM {s}.trading_pairs tp
+                        JOIN {s}.assets a ON a.id = tp.base_asset_id
+                        WHERE a.symbol = %s AND tp.is_current = true AND tp.is_active = true
+                        LIMIT 1""",
+                    (asset,),
+                )
+                fee_row = cur.fetchone()
+                maker_fee = float(fee_row["maker_fee"] or 0) if fee_row else 0.0025
+                taker_fee = float(fee_row["taker_fee"] or 0) if fee_row else 0.005
+                round_trip_fee_pct = (maker_fee + taker_fee) * 100  # as percentage
+
+                # Expected profit from strategy's take profit or target
+                expected_profit_pct = exit_params.get("take_profit_pct", 0)
+                if not expected_profit_pct and exit_params.get("exit_target") == "middle":
+                    # Mean reversion — estimate from BB width
+                    bb_width = daily.get("bb_width")
+                    expected_profit_pct = float(bb_width) / 2 if bb_width else 0
+
+                min_profit = params.get("min_profit_after_fees_pct", round_trip_fee_pct * 1.5)
+
+                if expected_profit_pct > 0 and expected_profit_pct <= round_trip_fee_pct:
+                    no_signal.append({
+                        "strategy": strat["name"],
+                        "asset": asset,
+                        "reason": f"Unprofitable after fees: target {expected_profit_pct:.2f}% <= fees {round_trip_fee_pct:.2f}%",
+                    })
+                    continue
+
+            # ── Build actionable signal ──
 
             suggested = {"side": "buy", "price": price}
             # Stop loss from % or ATR
