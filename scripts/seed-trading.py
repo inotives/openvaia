@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+"""Seed trading reference data + strategies for inotagent-trading.
+
+Sets up: assets, venues, mappings, trading pairs, account, and strategies.
+Safe to re-run — skips existing records.
+
+Usage:
+    python3 scripts/seed-trading.py
+    python3 scripts/seed-trading.py --force   # delete and re-create strategies
+"""
+
+import json
+import os
+import sys
+from decimal import Decimal
+
+import psycopg
+from psycopg.rows import dict_row
+
+# ── Reference Data ───────────────────────────────────────────────────────────
+
+ASSETS = [
+    {"symbol": "BTC", "name": "Bitcoin"},
+    {"symbol": "ETH", "name": "Ethereum"},
+    {"symbol": "SOL", "name": "Solana"},
+    {"symbol": "XRP", "name": "Ripple"},
+    {"symbol": "USD", "name": "US Dollar"},
+    {"symbol": "USDT", "name": "Tether"},
+]
+
+VENUES = [
+    {"code": "cryptocom", "name": "Crypto.com", "type": "exchange", "ccxt_id": "cryptocom"},
+    {"code": "coingecko", "name": "CoinGecko", "type": "data", "ccxt_id": None},
+    {"code": "coinmarketcap", "name": "CoinMarketCap", "type": "data", "ccxt_id": None},
+]
+
+# CoinGecko asset mappings (for daily OHLCV fetch)
+COINGECKO_MAPPINGS = [
+    {"asset": "BTC", "external_id": "bitcoin"},
+    {"asset": "ETH", "external_id": "ethereum"},
+    {"asset": "SOL", "external_id": "solana"},
+    {"asset": "XRP", "external_id": "ripple"},
+]
+
+# Trading pairs on Crypto.com Exchange (spot)
+TRADING_PAIRS = [
+    {"base": "BTC", "quote": "USD", "pair_symbol": "BTC/USD", "maker_fee": "0.0025", "taker_fee": "0.005"},
+    {"base": "ETH", "quote": "USD", "pair_symbol": "ETH/USD", "maker_fee": "0.0025", "taker_fee": "0.005"},
+    {"base": "SOL", "quote": "USD", "pair_symbol": "SOL/USD", "maker_fee": "0.0025", "taker_fee": "0.005"},
+    {"base": "XRP", "quote": "USD", "pair_symbol": "XRP/USD", "maker_fee": "0.0025", "taker_fee": "0.005"},
+]
+
+# ── Strategies (v3, tuned on 6-month data) ───────────────────────────────────
+
+STRATEGIES = [
+    # Momentum — buy RSI oversold dips in moderate regimes
+    {
+        "name": "btc_momentum", "type": "momentum", "asset": "BTC",
+        "params": {
+            "entry": {"rsi_buy_threshold": 30, "min_adx": 15, "volume_ratio_min": 1.5, "min_regime_score": 50},
+            "exit": {"take_profit_pct": 8, "stop_loss_pct": 3},
+            "position": {"capital_per_trade_pct": 10},
+        },
+    },
+    {
+        "name": "eth_momentum", "type": "momentum", "asset": "ETH",
+        "params": {
+            "entry": {"rsi_buy_threshold": 30, "min_adx": 15, "volume_ratio_min": 1.5, "min_regime_score": 50},
+            "exit": {"take_profit_pct": 8, "stop_loss_pct": 8},
+            "position": {"capital_per_trade_pct": 10},
+        },
+    },
+    {
+        "name": "sol_momentum", "type": "momentum", "asset": "SOL",
+        "params": {
+            "entry": {"rsi_buy_threshold": 30, "min_adx": 15, "volume_ratio_min": 1.5, "min_regime_score": 50},
+            "exit": {"take_profit_pct": 8, "stop_loss_pct": 8},
+            "position": {"capital_per_trade_pct": 10},
+        },
+    },
+    {
+        "name": "xrp_momentum", "type": "momentum", "asset": "XRP",
+        "params": {
+            "entry": {"rsi_buy_threshold": 40, "min_adx": 15, "volume_ratio_min": 1.5, "min_regime_score": 40},
+            "exit": {"take_profit_pct": 8, "stop_loss_pct": 8},
+            "position": {"capital_per_trade_pct": 10},
+        },
+    },
+    # Trend follow — ride strong uptrends with ATR trailing stop
+    {
+        "name": "btc_trend_follow", "type": "trend_follow", "asset": "BTC",
+        "params": {
+            "entry": {"min_regime_score": 61, "min_adx": 30, "rsi_entry_max": 70, "max_atr_pct": 6.0},
+            "exit": {"atr_stop_multiplier": 2.0, "atr_trail_multiplier": 2.0, "take_profit_pct": 20},
+            "position": {"capital_per_trade_pct": 15, "risk_pct_per_trade": 1.0},
+        },
+    },
+    {
+        "name": "eth_trend_follow", "type": "trend_follow", "asset": "ETH",
+        "params": {
+            "entry": {"min_regime_score": 50, "min_adx": 25, "rsi_entry_max": 70, "max_atr_pct": 6.0},
+            "exit": {"atr_stop_multiplier": 2.0, "atr_trail_multiplier": 2.0, "take_profit_pct": 20},
+            "position": {"capital_per_trade_pct": 15, "risk_pct_per_trade": 1.0},
+        },
+    },
+    {
+        "name": "sol_trend_follow", "type": "trend_follow", "asset": "SOL",
+        "params": {
+            "entry": {"min_regime_score": 50, "min_adx": 30, "rsi_entry_max": 70, "max_atr_pct": 6.0},
+            "exit": {"atr_stop_multiplier": 2.0, "atr_trail_multiplier": 2.0, "take_profit_pct": 20},
+            "position": {"capital_per_trade_pct": 15, "risk_pct_per_trade": 1.0},
+        },
+    },
+    {
+        "name": "xrp_trend_follow", "type": "trend_follow", "asset": "XRP",
+        "params": {
+            "entry": {"min_regime_score": 50, "min_adx": 20, "rsi_entry_max": 70, "max_atr_pct": 6.0},
+            "exit": {"atr_stop_multiplier": 2.0, "atr_trail_multiplier": 2.0, "take_profit_pct": 20},
+            "position": {"capital_per_trade_pct": 15, "risk_pct_per_trade": 1.0},
+        },
+    },
+]
+
+
+def main():
+    force = "--force" in sys.argv
+    schema = os.environ.get("TRADING_SCHEMA", "trading_platform")
+
+    with psycopg.connect(
+        host=os.environ.get("POSTGRES_HOST", "localhost"),
+        port=int(os.environ.get("POSTGRES_PORT", "5445")),
+        user=os.environ.get("POSTGRES_USER", "inotives"),
+        password=os.environ["POSTGRES_PASSWORD"],
+        dbname=os.environ.get("POSTGRES_DB", "inotives"),
+        row_factory=dict_row,
+        autocommit=True,
+    ) as conn:
+        s = schema
+
+        # ── Assets ──
+        for asset in ASSETS:
+            cur = conn.execute(f"SELECT 1 FROM {s}.assets WHERE symbol = %s", (asset["symbol"],))
+            if cur.fetchone():
+                print(f"  SKIP asset {asset['symbol']}")
+            else:
+                conn.execute(
+                    f"INSERT INTO {s}.assets (symbol, name, created_by) VALUES (%s, %s, 'seed')",
+                    (asset["symbol"], asset["name"]),
+                )
+                print(f"  OK   asset {asset['symbol']}")
+
+        # ── Venues ──
+        for venue in VENUES:
+            cur = conn.execute(f"SELECT 1 FROM {s}.venues WHERE code = %s", (venue["code"],))
+            if cur.fetchone():
+                print(f"  SKIP venue {venue['code']}")
+            else:
+                conn.execute(
+                    f"INSERT INTO {s}.venues (code, name, type, ccxt_id, created_by) VALUES (%s, %s, %s, %s, 'seed')",
+                    (venue["code"], venue["name"], venue["type"], venue["ccxt_id"]),
+                )
+                print(f"  OK   venue {venue['code']}")
+
+        # ── CoinGecko mappings ──
+        cg_venue = conn.execute(f"SELECT id FROM {s}.venues WHERE code = 'coingecko'").fetchone()
+        if cg_venue:
+            for m in COINGECKO_MAPPINGS:
+                asset_row = conn.execute(f"SELECT id FROM {s}.assets WHERE symbol = %s", (m["asset"],)).fetchone()
+                if not asset_row:
+                    continue
+                cur = conn.execute(
+                    f"SELECT 1 FROM {s}.asset_mappings WHERE asset_id = %s AND venue_id = %s",
+                    (asset_row["id"], cg_venue["id"]),
+                )
+                if cur.fetchone():
+                    print(f"  SKIP mapping {m['asset']} → coingecko")
+                else:
+                    conn.execute(
+                        f"INSERT INTO {s}.asset_mappings (asset_id, venue_id, external_id, created_by) VALUES (%s, %s, %s, 'seed')",
+                        (asset_row["id"], cg_venue["id"], m["external_id"]),
+                    )
+                    print(f"  OK   mapping {m['asset']} → coingecko:{m['external_id']}")
+
+        # ── Trading pairs ──
+        cc_venue = conn.execute(f"SELECT id FROM {s}.venues WHERE code = 'cryptocom'").fetchone()
+        if cc_venue:
+            for tp in TRADING_PAIRS:
+                base = conn.execute(f"SELECT id FROM {s}.assets WHERE symbol = %s", (tp["base"],)).fetchone()
+                quote = conn.execute(f"SELECT id FROM {s}.assets WHERE symbol = %s", (tp["quote"],)).fetchone()
+                if not base or not quote:
+                    continue
+                cur = conn.execute(
+                    f"SELECT 1 FROM {s}.trading_pairs WHERE venue_id = %s AND base_asset_id = %s AND is_current = true",
+                    (cc_venue["id"], base["id"]),
+                )
+                if cur.fetchone():
+                    print(f"  SKIP pair {tp['pair_symbol']}")
+                else:
+                    conn.execute(
+                        f"""INSERT INTO {s}.trading_pairs
+                            (venue_id, base_asset_id, quote_asset_id, pair_symbol, maker_fee, taker_fee, created_by)
+                            VALUES (%s, %s, %s, %s, %s, %s, 'seed')""",
+                        (cc_venue["id"], base["id"], quote["id"], tp["pair_symbol"], tp["maker_fee"], tp["taker_fee"]),
+                    )
+                    print(f"  OK   pair {tp['pair_symbol']}")
+
+        # ── Strategies ──
+        if force:
+            conn.execute(f"DELETE FROM {s}.strategies WHERE name LIKE 'btc_%%' OR name LIKE 'eth_%%' OR name LIKE 'sol_%%' OR name LIKE 'xrp_%%'")
+            print("  Deleted existing strategies (--force)")
+
+        for strat in STRATEGIES:
+            cur = conn.execute(
+                f"SELECT 1 FROM {s}.strategies WHERE name = %s AND is_current = true",
+                (strat["name"],),
+            )
+            if cur.fetchone():
+                print(f"  SKIP strategy {strat['name']}")
+                continue
+
+            asset_row = conn.execute(f"SELECT id FROM {s}.assets WHERE symbol = %s", (strat["asset"],)).fetchone()
+            venue_row = conn.execute(f"SELECT id FROM {s}.venues WHERE code = 'cryptocom'").fetchone()
+
+            conn.execute(
+                f"""INSERT INTO {s}.strategies
+                    (name, type, asset_id, venue_id, params, is_active, paper_mode, created_by)
+                    VALUES (%s, %s, %s, %s, %s, false, true, 'seed')""",
+                (strat["name"], strat["type"], asset_row["id"], venue_row["id"], json.dumps(strat["params"])),
+            )
+            print(f"  OK   strategy {strat['name']} ({strat['type']}, {strat['asset']})")
+
+        # ── Summary ──
+        count = conn.execute(f"SELECT COUNT(*) AS n FROM {s}.strategies WHERE is_current = true").fetchone()
+        print(f"\nDone. {count['n']} strategies in DB.")
+
+
+if __name__ == "__main__":
+    main()

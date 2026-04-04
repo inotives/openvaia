@@ -47,6 +47,7 @@ clean-slate: wipe-db deploy-all
 	$(MAKE) import-skills
 	$(MAKE) seed-tasks
 	$(MAKE) seed-chains
+	$(MAKE) trading-setup
 
 # Tear down everything (removes containers)
 down:
@@ -214,7 +215,7 @@ local-migrate:
 	uv run dbmate -d infra/postgres/migrations --url "$$DB_URL" --no-dump-schema up
 
 # Full local setup: install + migrate + import skills + seed tasks + seed chains
-local-setup: local-install local-migrate import-skills seed-tasks seed-chains
+local-setup: local-install local-migrate import-skills seed-tasks seed-chains trading-setup
 	@echo "Local setup complete. Run: make local-run AGENT=ino"
 
 # Run single agent locally
@@ -282,8 +283,31 @@ trading-logs:
 
 trading-migrate: local-migrate
 
+TRADING_DB_ENV = POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2) POSTGRES_DB=inotives TRADING_SCHEMA=trading_platform
+
 trading-seed:
-	@echo "TODO: seed assets, venues, mappings, historical OHLCV"
+	$(TRADING_DB_ENV) python3 scripts/seed-trading.py
+
+trading-seed-ohlcv:
+	@cd inotagent-trading && for pair in "BTC btc" "ETH eth" "SOL sol" "XRP xrp"; do \
+		set -- $$pair; \
+		CSV="data/seeds/$${2}_historical_data.csv"; \
+		if [ -f "$$CSV" ]; then \
+			echo "Seeding $$1 from $$CSV..."; \
+			$(TRADING_DB_ENV) uv run python -m cli.market seed-daily --asset $$1 --venue coinmarketcap --file $$CSV; \
+		else \
+			echo "SKIP $$1 — $$CSV not found"; \
+		fi; \
+	done
+
+trading-backfill-ta:
+	@cd inotagent-trading && for asset in BTC ETH SOL XRP; do \
+		echo "Backfilling TA for $$asset..."; \
+		$(TRADING_DB_ENV) uv run python -m cli.market backfill-daily-ta --asset $$asset; \
+	done
+
+trading-setup: trading-seed trading-seed-ohlcv trading-backfill-ta
+	@echo "Trading setup complete: reference data + OHLCV + TA indicators"
 
 trading-test:
 	cd inotagent-trading && make test
