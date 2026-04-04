@@ -10,7 +10,7 @@ import argparse
 import csv
 import json
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -414,6 +414,183 @@ def cmd_backfill_daily_ta(args):
     output({"status": "ok", "asset": args.asset.upper(), "rows_computed": count})
 
 
+def cmd_fetch_daily(args):
+    """Fetch latest daily OHLCV from CoinGecko for all active assets."""
+    import requests
+    from datetime import timedelta
+
+    s = schema()
+    with sync_connect() as conn:
+        # Find coingecko venue
+        cur = conn.execute(f"SELECT id FROM {s}.venues WHERE code = 'coingecko'")
+        cg_venue = cur.fetchone()
+        if not cg_venue:
+            error("Venue 'coingecko' not found. Run: cli.market add-venue --code coingecko --name CoinGecko --type data")
+        cg_venue_id = cg_venue["id"]
+
+        # Get all active assets with coingecko mapping
+        cur = conn.execute(
+            f"""SELECT a.id AS asset_id, a.symbol, am.external_id AS coingecko_id
+                FROM {s}.assets a
+                JOIN {s}.asset_mappings am ON am.asset_id = a.id AND am.venue_id = %s
+                WHERE a.is_active = true AND a.deleted_at IS NULL AND am.is_active = true""",
+            (cg_venue_id,),
+        )
+        assets = cur.fetchall()
+
+        if not assets:
+            error("No assets with CoinGecko mapping found. Run: cli.market add-mapping --asset CRO --venue coingecko --external-id crypto-com-chain")
+
+        total_inserted = 0
+        for asset in assets:
+            coingecko_id = asset["coingecko_id"]
+            asset_id = asset["asset_id"]
+
+            try:
+                # CoinGecko market_chart API — returns daily [timestamp, price] arrays
+                resp = requests.get(
+                    f"https://api.coingecko.com/api/v3/coins/{coingecko_id}/ohlc",
+                    params={"vs_currency": "usd", "days": str(args.days)},
+                    timeout=30,
+                )
+                resp.raise_for_status()
+                candles = resp.json()
+
+                if not isinstance(candles, list):
+                    output({"warning": f"{asset['symbol']}: unexpected response from CoinGecko"})
+                    continue
+
+                # CoinGecko OHLC returns 30min candles for days=1, 4h for days<=30
+                # We need to aggregate to daily
+                from collections import defaultdict
+                daily_data = defaultdict(lambda: {"open": None, "high": float("-inf"), "low": float("inf"), "close": None, "candles": 0})
+
+                for c in candles:
+                    ts = datetime.fromtimestamp(c[0] / 1000, tz=timezone.utc)
+                    day_key = ts.strftime("%Y-%m-%d")
+                    d = daily_data[day_key]
+                    if d["open"] is None:
+                        d["open"] = c[1]
+                    d["high"] = max(d["high"], c[2])
+                    d["low"] = min(d["low"], c[3])
+                    d["close"] = c[4]
+                    d["candles"] += 1
+
+                count = 0
+                for day_str, d in sorted(daily_data.items()):
+                    if d["open"] is None or d["candles"] < 2:
+                        continue  # Skip incomplete days
+
+                    conn.execute(
+                        f"""INSERT INTO {s}.ohlcv_daily
+                            (asset_id, venue_id, date, open, high, low, close)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (asset_id, venue_id, date) DO UPDATE SET
+                                open = EXCLUDED.open, high = EXCLUDED.high,
+                                low = EXCLUDED.low, close = EXCLUDED.close""",
+                        (
+                            asset_id, cg_venue_id, day_str,
+                            Decimal(str(d["open"])),
+                            Decimal(str(d["high"])),
+                            Decimal(str(d["low"])),
+                            Decimal(str(d["close"])),
+                        ),
+                    )
+                    count += 1
+
+                total_inserted += count
+                conn.commit()
+
+            except requests.RequestException as e:
+                output({"warning": f"{asset['symbol']}: CoinGecko API error: {e}"})
+                continue
+
+    output({"status": "ok", "assets_fetched": len(assets), "days_inserted": total_inserted})
+
+
+def cmd_compute_daily_ta(args):
+    """Recompute daily TA for all assets using latest OHLCV data (last row only)."""
+    import pandas as pd
+    from core.indicators import compute_daily
+
+    s = schema()
+    with sync_connect() as conn:
+        cur = conn.execute(
+            f"SELECT id, symbol FROM {s}.assets WHERE is_active = true AND deleted_at IS NULL"
+        )
+        assets = cur.fetchall()
+
+        count = 0
+        for asset in assets:
+            asset_id = asset["id"]
+
+            cur = conn.execute(
+                f"""SELECT date, open, high, low, close, volume
+                    FROM {s}.ohlcv_daily WHERE asset_id = %s ORDER BY date ASC""",
+                (asset_id,),
+            )
+            rows = cur.fetchall()
+            if len(rows) < 15:
+                continue
+
+            df = pd.DataFrame([dict(r) for r in rows])
+            for col in ["open", "high", "low", "close", "volume"]:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
+            indicators = compute_daily(df)
+            if indicators.empty:
+                continue
+
+            # Only write the last row (today's TA)
+            latest = indicators.iloc[-1]
+            date_val = df.iloc[-1]["date"]
+
+            cols = [
+                "rsi_14", "rsi_7", "stoch_rsi_k", "stoch_rsi_d",
+                "ema_9", "ema_12", "ema_20", "ema_26", "ema_50", "ema_200",
+                "sma_50", "sma_200",
+                "macd", "macd_signal", "macd_hist",
+                "atr_14", "bb_upper", "bb_lower", "bb_width",
+                "adx_14",
+                "obv", "volume_sma_20", "volume_ratio",
+                "regime_score",
+            ]
+            custom_cols = ["ema_8", "kc_upper", "kc_lower", "squeeze", "high_20d"]
+
+            values = [asset_id, date_val]
+            for col in cols:
+                val = latest.get(col)
+                if pd.notna(val):
+                    values.append(Decimal(str(round(float(val), 8))))
+                else:
+                    values.append(None)
+
+            custom = {}
+            for col in custom_cols:
+                val = latest.get(col)
+                if pd.notna(val):
+                    custom[col] = round(float(val), 8)
+            values.append(json.dumps(custom) if custom else "{}")
+
+            all_cols = cols + ["custom"]
+            placeholders = ", ".join(f"%s" for _ in values)
+            col_names = "asset_id, date, " + ", ".join(all_cols)
+
+            conn.execute(
+                f"""INSERT INTO {s}.indicators_daily ({col_names})
+                    VALUES ({placeholders})
+                    ON CONFLICT (asset_id, date) DO UPDATE SET
+                        {', '.join(f'{c} = EXCLUDED.{c}' for c in all_cols)}
+                """,
+                values,
+            )
+            count += 1
+
+        conn.commit()
+
+    output({"status": "ok", "assets_computed": count})
+
+
 def cmd_poller_status(args):
     """Read poller health status from JSON file."""
     from pathlib import Path
@@ -493,6 +670,11 @@ def main():
     p.add_argument("--venue", required=True)
     p.add_argument("--file", required=True)
 
+    p = sub.add_parser("fetch-daily")
+    p.add_argument("--days", type=int, default=1, help="Number of days to fetch from CoinGecko")
+
+    sub.add_parser("compute-daily-ta")
+
     p = sub.add_parser("backfill-daily-ta")
     p.add_argument("--asset", required=True)
 
@@ -514,6 +696,8 @@ def main():
         "ta": cmd_ta,
         "history": cmd_history,
         "seed-daily": cmd_seed_daily,
+        "fetch-daily": cmd_fetch_daily,
+        "compute-daily-ta": cmd_compute_daily_ta,
         "backfill-daily-ta": cmd_backfill_daily_ta,
         "coverage": cmd_coverage,
         "poller-status": cmd_poller_status,
