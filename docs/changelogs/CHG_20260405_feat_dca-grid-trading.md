@@ -21,3 +21,14 @@ DCA Grid trading with two modes (Batch Grid + Adaptive FIFO Grid), regime-based 
 - [x] `tests/test_dca_grid.py` — 27 tests (levels, weights, mode, hysteresis, TP, entry conditions)
 - [x] `btc_dca_grid` strategy added to seed script with default params
 - [x] Verified: open cycle → check status → cancel cycle against local DB
+
+### Phase 2: Adaptive FIFO Mode + Regime Integration + Monitor
+- [x] `cli/grid.py monitor` — main grid loop: fill detection, TP placement, regime transitions, expiry
+- [x] FIFO mode: per-level individual TP sell orders placed on fill detection
+- [x] Batch mode: single TP updated (cancel + replace) as levels fill
+- [x] Paper fill simulation: detects when current price <= grid level price
+- [x] Paper TP detection: detects when current price >= TP price
+- [x] Regime transition: RS >= 65 → cancel unfilled, keep TPs, mark transition_pending
+- [x] Stop-loss detection: current price <= stop → close cycle, cancel all orders
+- [x] Cycle expiry: 72h → cancel unfilled, mark expired_pending
+- [x] All TP sold detection: closes cycle when all filled levels are sold (FIFO)

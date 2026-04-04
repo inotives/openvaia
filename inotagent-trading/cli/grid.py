@@ -69,13 +69,20 @@ def _save_cycle(conn, s: str, cycle: GridCycle, asset_id: int, venue_id: int) ->
     return cur.fetchone()["id"]
 
 
-def _update_cycle(conn, s: str, db_order_id: int, cycle: GridCycle):
-    """Update grid cycle state."""
-    cycle_json = json.dumps(cycle.to_json())
-    status = "open" if cycle.status == "active" else "filled"
+def _update_cycle(conn, s: str, db_order_id: int, cycle_data):
+    """Update grid cycle state. Accepts GridCycle or dict."""
+    if hasattr(cycle_data, "to_json"):
+        data = cycle_data.to_json()
+        status_val = cycle_data.status
+    else:
+        data = cycle_data
+        status_val = cycle_data.get("status", "active")
+
+    cycle_json = json.dumps(data)
+    db_status = "open" if status_val == "active" else "filled"
     conn.execute(
         f"UPDATE {s}.orders SET rationale = %s, status = %s WHERE id = %s",
-        (f"grid_cycle:{cycle_json}", status, db_order_id),
+        (f"grid_cycle:{cycle_json}", db_status, db_order_id),
     )
 
 
@@ -255,6 +262,293 @@ def cmd_cancel(args):
         })
 
 
+def cmd_monitor(args):
+    """Monitor all active grid cycles — detect fills, place TPs, handle regime transitions.
+
+    This is the main grid loop. Robin calls it every 5 minutes.
+    """
+    s = schema()
+    actions = []
+
+    with sync_connect() as conn:
+        cycles = _get_active_cycles(conn, s)
+        if not cycles:
+            output({"actions": [], "message": "No active cycles"})
+            return
+
+        for cycle_data in cycles:
+            cycle_id = cycle_data.get("cycle_id", "?")
+            asset = cycle_data.get("asset", "?")
+            mode = cycle_data.get("mode", "batch")
+            status = cycle_data.get("status", "active")
+            db_order_id = cycle_data.get("db_order_id")
+
+            # Get current regime score
+            cur = conn.execute(
+                f"""SELECT regime_score FROM {s}.indicators_daily
+                    WHERE asset_id = (SELECT id FROM {s}.assets WHERE symbol = %s)
+                    ORDER BY date DESC LIMIT 1""",
+                (asset,),
+            )
+            regime_row = cur.fetchone()
+            regime = float(regime_row["regime_score"]) if regime_row and regime_row["regime_score"] else 50
+
+            # Get current price (latest 1m or daily)
+            cur = conn.execute(
+                f"""SELECT close FROM {s}.ohlcv_1m
+                    WHERE asset_id = (SELECT id FROM {s}.assets WHERE symbol = %s)
+                    ORDER BY timestamp DESC LIMIT 1""",
+                (asset,),
+            )
+            price_row = cur.fetchone()
+            if not price_row:
+                cur = conn.execute(
+                    f"""SELECT close FROM {s}.ohlcv_daily
+                        WHERE asset_id = (SELECT id FROM {s}.assets WHERE symbol = %s)
+                        ORDER BY date DESC LIMIT 1""",
+                    (asset,),
+                )
+                price_row = cur.fetchone()
+
+            if not price_row:
+                continue
+            current_price = Decimal(str(price_row["close"]))
+
+            levels = cycle_data.get("levels", [])
+            changed = False
+
+            # ── Check regime transition ──
+            pause_threshold = 65  # from strategy params
+            if status == "active" and regime >= pause_threshold:
+                # Cancel unfilled levels, keep filled TPs
+                cancelled_count = 0
+                for level in levels:
+                    if level["status"] == "open":
+                        level["status"] = "cancelled"
+                        if level.get("buy_order_id"):
+                            conn.execute(
+                                f"UPDATE {s}.orders SET status = 'cancelled', cancelled_at = NOW() WHERE id = %s",
+                                (level["buy_order_id"],),
+                            )
+                        cancelled_count += 1
+
+                cycle_data["status"] = "transition_pending"
+                changed = True
+                actions.append({
+                    "cycle_id": cycle_id,
+                    "action": "regime_transition",
+                    "regime": regime,
+                    "cancelled_unfilled": cancelled_count,
+                })
+
+            # ── Check fills (paper mode — simulate based on price) ──
+            if status == "active":
+                for level in levels:
+                    if level["status"] != "open":
+                        continue
+                    if current_price <= Decimal(str(level["price"])):
+                        # Level filled!
+                        level["status"] = "filled"
+                        level["quantity"] = float(Decimal(str(level["capital"])) / Decimal(str(level["price"])))
+
+                        # Update the buy order in DB
+                        if level.get("buy_order_id"):
+                            conn.execute(
+                                f"UPDATE {s}.orders SET status = 'filled', filled_at = NOW() WHERE id = %s",
+                                (level["buy_order_id"],),
+                            )
+
+                        changed = True
+                        actions.append({
+                            "cycle_id": cycle_id,
+                            "action": "level_filled",
+                            "level": level["level"],
+                            "price": level["price"],
+                        })
+
+                        # Place TP based on mode
+                        if mode == "adaptive_fifo":
+                            # FIFO: individual TP per level
+                            from strategies.dca_grid import compute_fifo_tp_price, GridLevel
+                            gl = GridLevel(level["level"], Decimal(str(level["price"])),
+                                           Decimal(str(level["capital"])), Decimal(str(level["quantity"])))
+                            # Get profit target from strategy params
+                            cur2 = conn.execute(
+                                f"""SELECT params FROM {s}.strategies
+                                    WHERE asset_id = (SELECT id FROM {s}.assets WHERE symbol = %s)
+                                    AND type = 'dca_grid' AND is_current = true""",
+                                (asset,),
+                            )
+                            strat = cur2.fetchone()
+                            params = strat["params"] if strat and isinstance(strat["params"], dict) else json.loads(strat["params"]) if strat else {}
+                            atr_pct = 3.0  # approximate
+                            from strategies.dca_grid import get_volatility_regime, get_grid_params
+                            vol = get_volatility_regime(atr_pct)
+                            _, profit_target = get_grid_params(vol, params)
+
+                            tp_price = compute_fifo_tp_price(gl, profit_target)
+                            level["tp_price"] = float(tp_price)
+
+                            # Place TP sell order in DB
+                            asset_row = conn.execute(
+                                f"SELECT id FROM {s}.assets WHERE symbol = %s", (asset,)
+                            ).fetchone()
+                            venue_row = conn.execute(
+                                f"SELECT id FROM {s}.venues WHERE code = %s", (cycle_data.get("venue", "cryptocom"),)
+                            ).fetchone()
+
+                            if asset_row and venue_row:
+                                cur3 = conn.execute(
+                                    f"""INSERT INTO {s}.orders
+                                        (asset_id, venue_id, side, type, quantity, price, status, paper,
+                                         rationale, created_by)
+                                        VALUES (%s, %s, 'sell', 'limit', %s, %s, 'open', true,
+                                                %s, 'grid')
+                                        RETURNING id""",
+                                    (asset_row["id"], venue_row["id"], Decimal(str(level["quantity"])),
+                                     tp_price, f"grid:{cycle_id}:tp:{level['level']}"),
+                                )
+                                level["sell_order_id"] = cur3.fetchone()["id"]
+
+                            actions.append({
+                                "cycle_id": cycle_id,
+                                "action": "fifo_tp_placed",
+                                "level": level["level"],
+                                "tp_price": float(tp_price),
+                            })
+
+                # Batch mode: update single TP after any fills
+                if mode == "batch":
+                    filled = [l for l in levels if l["status"] == "filled"]
+                    if filled:
+                        from strategies.dca_grid import compute_batch_tp_price, GridLevel
+                        grid_levels = [
+                            GridLevel(l["level"], Decimal(str(l["price"])),
+                                      Decimal(str(l["capital"])), Decimal(str(l["quantity"])))
+                            for l in filled
+                        ]
+
+                        cur2 = conn.execute(
+                            f"""SELECT params FROM {s}.strategies
+                                WHERE asset_id = (SELECT id FROM {s}.assets WHERE symbol = %s)
+                                AND type = 'dca_grid' AND is_current = true""",
+                            (asset,),
+                        )
+                        strat = cur2.fetchone()
+                        params = strat["params"] if strat and isinstance(strat["params"], dict) else json.loads(strat["params"]) if strat else {}
+                        atr_pct = 3.0
+                        from strategies.dca_grid import get_volatility_regime, get_grid_params
+                        vol = get_volatility_regime(atr_pct)
+                        _, profit_target = get_grid_params(vol, params)
+
+                        tp = compute_batch_tp_price(grid_levels, profit_target)
+                        if tp:
+                            cycle_data["avg_entry"] = float(sum(Decimal(str(l["capital"])) for l in filled) / sum(Decimal(str(l["quantity"])) for l in filled))
+                            cycle_data["take_profit_price"] = float(tp)
+
+            # ── Check TP fills (paper mode) ──
+            if mode == "adaptive_fifo":
+                for level in levels:
+                    if level["status"] == "filled" and level.get("tp_price") and level.get("sell_order_id"):
+                        if current_price >= Decimal(str(level["tp_price"])):
+                            level["status"] = "sold"
+                            conn.execute(
+                                f"UPDATE {s}.orders SET status = 'filled', filled_at = NOW() WHERE id = %s",
+                                (level["sell_order_id"],),
+                            )
+                            changed = True
+                            actions.append({
+                                "cycle_id": cycle_id,
+                                "action": "fifo_tp_filled",
+                                "level": level["level"],
+                                "tp_price": level["tp_price"],
+                            })
+
+                # Check if all filled levels are sold → cycle complete
+                filled_or_sold = [l for l in levels if l["status"] in ("filled", "sold")]
+                if filled_or_sold and all(l["status"] == "sold" for l in filled_or_sold):
+                    # All TPs filled, cancel any remaining open buys
+                    for level in levels:
+                        if level["status"] == "open":
+                            level["status"] = "cancelled"
+                            if level.get("buy_order_id"):
+                                conn.execute(
+                                    f"UPDATE {s}.orders SET status = 'cancelled' WHERE id = %s",
+                                    (level["buy_order_id"],),
+                                )
+                    cycle_data["status"] = "closed"
+                    cycle_data["close_reason"] = "all_tps_filled"
+                    changed = True
+                    actions.append({"cycle_id": cycle_id, "action": "cycle_closed", "reason": "all TPs filled"})
+
+            elif mode == "batch" and cycle_data.get("take_profit_price"):
+                if current_price >= Decimal(str(cycle_data["take_profit_price"])):
+                    # Batch TP filled — close entire cycle
+                    for level in levels:
+                        if level["status"] == "filled":
+                            level["status"] = "sold"
+                        elif level["status"] == "open":
+                            level["status"] = "cancelled"
+                            if level.get("buy_order_id"):
+                                conn.execute(
+                                    f"UPDATE {s}.orders SET status = 'cancelled' WHERE id = %s",
+                                    (level["buy_order_id"],),
+                                )
+                    cycle_data["status"] = "closed"
+                    cycle_data["close_reason"] = "batch_tp_filled"
+                    changed = True
+                    actions.append({"cycle_id": cycle_id, "action": "cycle_closed", "reason": "batch TP filled"})
+
+            # ── Check stop-loss (paper mode) ──
+            stop_price = cycle_data.get("stop_loss_price")
+            if stop_price and current_price <= Decimal(str(stop_price)) and status in ("active", "transition_pending", "expired_pending"):
+                for level in levels:
+                    if level["status"] in ("open", "filled"):
+                        level["status"] = "cancelled" if level["status"] == "open" else "stopped"
+                        order_id = level.get("buy_order_id") if level["status"] == "cancelled" else level.get("sell_order_id")
+                        if order_id:
+                            conn.execute(
+                                f"UPDATE {s}.orders SET status = 'cancelled' WHERE id = %s", (order_id,)
+                            )
+                cycle_data["status"] = "closed"
+                cycle_data["close_reason"] = "stop_loss"
+                changed = True
+                actions.append({"cycle_id": cycle_id, "action": "stop_loss_triggered", "price": float(current_price)})
+
+            # ── Check expiry (72h) ──
+            opened_at = cycle_data.get("opened_at", "")
+            if opened_at and status == "active":
+                try:
+                    opened = datetime.fromisoformat(opened_at)
+                    hours_open = (datetime.now(timezone.utc) - opened).total_seconds() / 3600
+                    if hours_open >= 72:
+                        # Cancel unfilled, keep filled TPs
+                        for level in levels:
+                            if level["status"] == "open":
+                                level["status"] = "cancelled"
+                                if level.get("buy_order_id"):
+                                    conn.execute(
+                                        f"UPDATE {s}.orders SET status = 'cancelled' WHERE id = %s",
+                                        (level["buy_order_id"],),
+                                    )
+                        cycle_data["status"] = "expired_pending"
+                        changed = True
+                        actions.append({"cycle_id": cycle_id, "action": "cycle_expired", "hours": round(hours_open, 1)})
+                except (ValueError, TypeError):
+                    pass
+
+            # Save updated cycle state
+            if changed:
+                _update_cycle(conn, s, db_order_id, type("Cycle", (), {
+                    "to_json": lambda self=cycle_data: cycle_data,
+                    "status": cycle_data.get("status", "active"),
+                })())
+
+        conn.commit()
+
+    output({"actions": actions, "cycles_checked": len(cycles)})
+
+
 def main():
     parser = argparse.ArgumentParser(prog="python -m cli.grid", description="Grid cycle management")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -266,12 +560,14 @@ def main():
     p = sub.add_parser("status")
     p.add_argument("--asset", default=None)
 
+    sub.add_parser("monitor")
+
     p = sub.add_parser("cancel")
     p.add_argument("--cycle-id", required=True)
     p.add_argument("--reason", default=None)
 
     args = parser.parse_args()
-    commands = {"open": cmd_open, "status": cmd_status, "cancel": cmd_cancel}
+    commands = {"open": cmd_open, "status": cmd_status, "monitor": cmd_monitor, "cancel": cmd_cancel}
     commands[args.command](args)
 
 
