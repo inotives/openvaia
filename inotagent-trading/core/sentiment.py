@@ -10,6 +10,7 @@ Output: -1.0 (extreme fear) to +1.0 (extreme greed)
 
 from __future__ import annotations
 
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,54 @@ def get_sentiment_adjustments(classification: str, config: dict | None = None) -
         return config["adjustments"].get(classification, defaults.get(classification, {}))
 
     return defaults.get(classification, {"capital_multiplier": 1.0})
+
+
+def store_sentiment_snapshot(conn, schema: str, score: float, classification: str,
+                             fgi: int | None, funding_rate: float | None, news_score: float | None):
+    """Store daily sentiment snapshot for trend tracking.
+
+    Stored in indicators_daily.custom on a special 'sentiment_history' key.
+    Uses the latest BTC row as the anchor (sentiment is market-wide, not per-asset).
+    """
+    s = schema
+    snapshot = {
+        "sentiment_score": score,
+        "sentiment_class": classification,
+        "fear_greed_index": fgi,
+        "funding_rate": funding_rate,
+        "news_score": news_score,
+    }
+
+    try:
+        conn.execute(
+            f"""UPDATE {s}.indicators_daily
+                SET custom = COALESCE(custom, '{{}}'::jsonb) || %s::jsonb
+                WHERE id = (
+                    SELECT id FROM {s}.indicators_daily
+                    WHERE asset_id = (SELECT id FROM {s}.assets WHERE symbol = 'BTC')
+                    ORDER BY date DESC LIMIT 1
+                )""",
+            (json.dumps({"sentiment_snapshot": snapshot}),),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to store sentiment snapshot: {e}")
+
+
+def get_sentiment_trend(conn, schema: str, days: int = 7) -> list[dict]:
+    """Get sentiment trend over last N days. Returns list of daily snapshots."""
+    s = schema
+    try:
+        cur = conn.execute(
+            f"""SELECT date, custom->'sentiment_snapshot' AS snapshot
+                FROM {s}.indicators_daily
+                WHERE asset_id = (SELECT id FROM {s}.assets WHERE symbol = 'BTC')
+                  AND custom ? 'sentiment_snapshot'
+                ORDER BY date DESC LIMIT %s""",
+            (days,),
+        )
+        return [{"date": str(r["date"]), **r["snapshot"]} for r in cur.fetchall() if r["snapshot"]]
+    except Exception:
+        return []
 
 
 def load_sentiment_data(conn, schema: str, asset_symbol: str) -> dict:

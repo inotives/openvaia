@@ -33,18 +33,9 @@ except psycopg.errors.DuplicateDatabase:
 conn.close()
 "
 
-# Step 3: Run DB migrations (schema names hardcoded in SQL files)
-echo "Running DB migrations..."
-DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}?sslmode=disable"
-
-for i in 1 2 3 4 5; do
-    if dbmate -d /app/infra/postgres/migrations --url "${DATABASE_URL}" --no-dump-schema up; then
-        echo "Migrations applied successfully"
-        break
-    fi
-    echo "Migration attempt $i failed, retrying in 3s..."
-    sleep 3
-done
+# Step 3: Migrations — run from host via 'make local-migrate' before starting containers.
+# Not run here to avoid schema_migrations sync issues between host and container dbmate.
+echo "Skipping migrations (run 'make local-migrate' from host before deploy)"
 
 # Step 4: Bootstrap
 # Multi-agent mode: AGENTS env var contains comma-separated names

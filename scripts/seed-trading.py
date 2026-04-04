@@ -42,12 +42,18 @@ COINGECKO_MAPPINGS = [
     {"asset": "XRP", "external_id": "ripple"},
 ]
 
-# Trading pairs on Crypto.com Exchange (spot)
+# Trading pairs on Crypto.com Exchange
 TRADING_PAIRS = [
+    # Spot pairs
     {"base": "BTC", "quote": "USD", "pair_symbol": "BTC/USD", "maker_fee": "0.0025", "taker_fee": "0.005"},
     {"base": "ETH", "quote": "USD", "pair_symbol": "ETH/USD", "maker_fee": "0.0025", "taker_fee": "0.005"},
     {"base": "SOL", "quote": "USD", "pair_symbol": "SOL/USD", "maker_fee": "0.0025", "taker_fee": "0.005"},
     {"base": "XRP", "quote": "USD", "pair_symbol": "XRP/USD", "maker_fee": "0.0025", "taker_fee": "0.005"},
+    # Perpetual pairs (for funding rate + futures trading)
+    {"base": "BTC", "quote": "USD", "pair_symbol": "BTC/USD:USD", "maker_fee": "0.00015", "taker_fee": "0.00045"},
+    {"base": "ETH", "quote": "USD", "pair_symbol": "ETH/USD:USD", "maker_fee": "0.00015", "taker_fee": "0.00045"},
+    {"base": "SOL", "quote": "USD", "pair_symbol": "SOL/USD:USD", "maker_fee": "0.00015", "taker_fee": "0.00045"},
+    {"base": "XRP", "quote": "USD", "pair_symbol": "XRP/USD:USD", "maker_fee": "0.00015", "taker_fee": "0.00045"},
 ]
 
 # Default account on Crypto.com Exchange
@@ -231,8 +237,8 @@ def main():
                 if not base or not quote:
                     continue
                 cur = conn.execute(
-                    f"SELECT 1 FROM {s}.trading_pairs WHERE venue_id = %s AND base_asset_id = %s AND is_current = true",
-                    (cc_venue["id"], base["id"]),
+                    f"SELECT 1 FROM {s}.trading_pairs WHERE venue_id = %s AND pair_symbol = %s AND is_current = true",
+                    (cc_venue["id"], tp["pair_symbol"]),
                 )
                 if cur.fetchone():
                     print(f"  SKIP pair {tp['pair_symbol']}")

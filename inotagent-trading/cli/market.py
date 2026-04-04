@@ -636,6 +636,52 @@ def cmd_fetch_sentiment(args):
     })
 
 
+def cmd_sentiment(args):
+    """Show current sentiment score and optionally store Robin's news score."""
+    from core.sentiment import (
+        load_sentiment_data, compute_sentiment_score,
+        get_sentiment_adjustments, store_sentiment_snapshot, get_sentiment_trend,
+    )
+
+    s = schema()
+    with sync_connect() as conn:
+        # Load FGI + funding rate from DB
+        data = load_sentiment_data(conn, s, "BTC")
+
+        # Compute composite score
+        score, classification = compute_sentiment_score(
+            fear_greed_index=data.get("fear_greed_index"),
+            funding_rate=data.get("funding_rate"),
+            news_score=args.news_score,
+        )
+
+        adjustments = get_sentiment_adjustments(classification)
+
+        # Store snapshot if news_score provided (Robin is actively scoring)
+        if args.news_score is not None:
+            store_sentiment_snapshot(
+                conn, s, score, classification,
+                data.get("fear_greed_index"), data.get("funding_rate"), args.news_score,
+            )
+            conn.commit()
+
+        # Get trend
+        trend = get_sentiment_trend(conn, s, days=7)
+
+    output({
+        "score": score,
+        "classification": classification,
+        "components": {
+            "fear_greed_index": data.get("fear_greed_index"),
+            "fear_greed_class": data.get("fear_greed_class"),
+            "funding_rate": data.get("funding_rate"),
+            "news_score": args.news_score,
+        },
+        "grid_adjustments": adjustments,
+        "trend_7d": trend,
+    })
+
+
 def cmd_sync_fees(args):
     """Sync trading pair fees from exchange API."""
     from core.exchange import CcxtExchange
@@ -781,6 +827,9 @@ def main():
 
     sub.add_parser("fetch-sentiment")
 
+    p = sub.add_parser("sentiment")
+    p.add_argument("--news-score", type=float, default=None, help="Robin's news sentiment score (-1.0 to +1.0)")
+
     p = sub.add_parser("sync-fees")
     p.add_argument("--venue", default=None, help="Venue to sync (default: all exchange venues)")
 
@@ -806,6 +855,7 @@ def main():
         "compute-daily-ta": cmd_compute_daily_ta,
         "backfill-daily-ta": cmd_backfill_daily_ta,
         "fetch-sentiment": cmd_fetch_sentiment,
+        "sentiment": cmd_sentiment,
         "sync-fees": cmd_sync_fees,
         "coverage": cmd_coverage,
         "poller-status": cmd_poller_status,

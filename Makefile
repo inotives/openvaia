@@ -41,9 +41,14 @@ wipe-db:
 	@echo "DB wiped. Run 'make deploy-all' to rebuild."
 
 # Clean slate: wipe DB + rebuild + wait for migrations + import skills
-clean-slate: wipe-db deploy-all
-	@echo "Waiting for migrations to complete..."
-	@sleep 15
+clean-slate: wipe-db
+	docker compose --profile infra up -d postgres
+	@echo "Waiting for Postgres..."
+	@until docker exec openvaia_postgres pg_isready -U inotives -q 2>/dev/null; do sleep 1; done
+	$(MAKE) local-migrate
+	$(MAKE) build
+	docker compose --profile infra up -d
+	@sleep 5
 	$(MAKE) import-skills
 	$(MAKE) seed-tasks
 	$(MAKE) seed-chains

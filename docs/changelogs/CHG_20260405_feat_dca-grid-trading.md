@@ -40,3 +40,14 @@ DCA Grid trading with two modes (Batch Grid + Adaptive FIFO Grid), regime-based 
 - [x] Grid `open` command: loads sentiment, adjusts capital (0x-1.5x), skips on extreme greed
 - [x] Sentiment helpers: normalize_fear_greed, normalize_funding_rate, get_sentiment_adjustments
 - [x] Verified: FGI=11 (extreme fear) fetched and stored, sentiment score computed correctly
+
+### Phase 3.5: Sentiment Gaps + Migration Fix
+- [x] Funding rate: loads perp pairs from DB (not hardcoded), derives from spot if no explicit perps
+- [x] Perp pairs seeded: BTC/ETH/SOL/XRP USD:USD with perp fees (0.015%/0.045%)
+- [x] Migration 013: fix trading_pairs unique constraint to include pair_symbol (allows spot + perp same base/quote)
+- [x] `1__trading_sentiment_analysis.md` — skill for Robin to score daily news sentiment (-1.0 to +1.0)
+- [x] `core/sentiment.py` — store_sentiment_snapshot + get_sentiment_trend (7d history)
+- [x] `cli/market.py sentiment` — show composite score, components, adjustments, 7d trend
+- [x] `cli/market.py sentiment --news-score -0.5` — Robin stores its news analysis score
+- [x] Entrypoint: removed migration from Docker (run from host only via `make local-migrate`)
+- [x] `clean-slate`: runs migrations from host before deploying containers

@@ -246,36 +246,55 @@ class PrivatePoller(BasePoller):
         self._last_fee_sync = now
 
     async def _sync_funding_rates(self) -> None:
-        """Fetch funding rates for perpetual pairs and store in indicators_intraday.custom."""
+        """Fetch funding rates for perpetual pairs (loaded from DB) and store in indicators_intraday.custom."""
         s = schema()
 
-        # Perpetual pairs to check (BTC, ETH have perps on most exchanges)
-        perp_symbols = ["BTC/USD:USD", "ETH/USD:USD"]
+        async with async_conn() as conn:
+            venue_row = await conn.fetchrow(
+                f"SELECT id FROM {s}.venues WHERE code = $1 AND deleted_at IS NULL",
+                self.exchange_id,
+            )
+            if not venue_row:
+                return
+            venue_id = venue_row["id"]
 
-        for symbol in perp_symbols:
-            try:
-                fr = self.exchange.exchange.fetch_funding_rate(symbol)
-                rate = fr.get("fundingRate")
-                if rate is None:
-                    continue
+            # Load perpetual pairs from trading_pairs (type=swap identified by ':' in pair_symbol)
+            perp_rows = await conn.fetch(
+                f"""SELECT tp.pair_symbol, a.symbol AS base_symbol, a.id AS asset_id
+                    FROM {s}.trading_pairs tp
+                    JOIN {s}.assets a ON a.id = tp.base_asset_id
+                    WHERE tp.venue_id = $1 AND tp.is_active = true AND tp.is_current = true
+                      AND tp.pair_symbol LIKE '%%:%%'""",
+                venue_id,
+            )
 
-                # Extract base asset
-                base = symbol.split("/")[0]
+            # If no perp pairs in DB, try deriving from spot pairs
+            if not perp_rows:
+                spot_rows = await conn.fetch(
+                    f"""SELECT tp.pair_symbol, a.symbol AS base_symbol, a.id AS asset_id
+                        FROM {s}.trading_pairs tp
+                        JOIN {s}.assets a ON a.id = tp.base_asset_id
+                        WHERE tp.venue_id = $1 AND tp.is_active = true AND tp.is_current = true
+                          AND tp.pair_symbol NOT LIKE '%%:%%'""",
+                    venue_id,
+                )
+                # Derive perp symbol: BTC/USD → BTC/USD:USD
+                perp_rows = []
+                for row in spot_rows:
+                    quote = row["pair_symbol"].split("/")[1] if "/" in row["pair_symbol"] else "USD"
+                    perp_rows.append({
+                        "pair_symbol": f"{row['pair_symbol']}:{quote}",
+                        "base_symbol": row["base_symbol"],
+                        "asset_id": row["asset_id"],
+                    })
 
-                async with async_conn() as conn:
-                    asset_row = await conn.fetchrow(
-                        f"SELECT id FROM {s}.assets WHERE symbol = $1 AND deleted_at IS NULL", base
-                    )
-                    if not asset_row:
+            for row in perp_rows:
+                try:
+                    fr = self.exchange.exchange.fetch_funding_rate(row["pair_symbol"])
+                    rate = fr.get("fundingRate")
+                    if rate is None:
                         continue
 
-                    venue_row = await conn.fetchrow(
-                        f"SELECT id FROM {s}.venues WHERE code = $1", self.exchange_id
-                    )
-                    if not venue_row:
-                        continue
-
-                    # Upsert into latest indicators_intraday custom JSONB
                     await conn.execute(
                         f"""UPDATE {s}.indicators_intraday
                             SET custom = custom || $1::jsonb
@@ -285,13 +304,12 @@ class PrivatePoller(BasePoller):
                                 ORDER BY timestamp DESC LIMIT 1
                             )""",
                         json.dumps({"funding_rate": float(rate)}),
-                        asset_row["id"], venue_row["id"],
+                        row["asset_id"], venue_id,
                     )
 
-                logger.debug(f"[private] Funding rate {base}: {rate}")
-            except Exception as e:
-                # Not all pairs have perps — silently skip
-                logger.debug(f"[private] Funding rate {symbol}: {e}")
+                    logger.debug(f"[private] Funding rate {row['base_symbol']}: {rate}")
+                except Exception as e:
+                    logger.debug(f"[private] Funding rate {row['pair_symbol']}: {e}")
 
     async def teardown(self) -> None:
         await close_async_pool()
