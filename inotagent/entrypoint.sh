@@ -33,23 +33,12 @@ except psycopg.errors.DuplicateDatabase:
 conn.close()
 "
 
-# Step 3: Run platform DB migrations
-echo "Running platform DB migrations..."
-SCHEMA="${PLATFORM_SCHEMA:-platform}"
+# Step 3: Run DB migrations (schema names hardcoded in SQL files)
+echo "Running DB migrations..."
 DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}?sslmode=disable"
 
-# Preprocess migrations: replace 'platform.' schema references with configured schema
-MIGRATION_DIR="/tmp/migrations_${SCHEMA}"
-rm -rf "${MIGRATION_DIR}"
-cp -r /app/infra/postgres/migrations "${MIGRATION_DIR}"
-if [ "${SCHEMA}" != "platform" ]; then
-    sed -i "s/CREATE SCHEMA IF NOT EXISTS platform/CREATE SCHEMA IF NOT EXISTS ${SCHEMA}/g" "${MIGRATION_DIR}"/*.sql
-    sed -i "s/DROP SCHEMA IF EXISTS platform/DROP SCHEMA IF EXISTS ${SCHEMA}/g" "${MIGRATION_DIR}"/*.sql
-    sed -i "s/platform\./${SCHEMA}\./g" "${MIGRATION_DIR}"/*.sql
-fi
-
 for i in 1 2 3 4 5; do
-    if dbmate -d "${MIGRATION_DIR}" --url "${DATABASE_URL}" --no-dump-schema up; then
+    if dbmate -d /app/infra/postgres/migrations --url "${DATABASE_URL}" --no-dump-schema up; then
         echo "Migrations applied successfully"
         break
     fi
