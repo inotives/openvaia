@@ -23,8 +23,8 @@ def check_btc_filter(conn, schema: str, config: dict | None = None) -> str | Non
     Returns None if OK to trade, or a reason string if blocked.
     """
     cfg = config or {}
-    btc_rsi_min = cfg.get("btc_rsi_min", 25)
-    btc_regime_min = cfg.get("btc_regime_min", 15)
+    btc_rsi_min = cfg.get("btc_rsi_min", 20)
+    btc_regime_min = cfg.get("btc_regime_min", 5)
     enabled = cfg.get("enabled", True)
 
     if not enabled:

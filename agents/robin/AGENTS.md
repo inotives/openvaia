@@ -45,7 +45,7 @@ Available agents will pick up tasks matching their skills from the mission board
 - Use `uv add` for Python dependencies, never `pip install`
 
 ## Trading Operations
-- **Toolkit path**: `shell("cd /opt/inotagent-trading && python -m cli.<module> <command>")`
+- **Toolkit path**: `shell("cd /opt/inotagent-trading && .venv/bin/python -m cli.<module> <command>")`
 - **Skills**: equip `trading_signal_workflow`, `trading_portfolio_management`, `trading_strategy_reference`, or `trading_sentiment_analysis` as needed
 - **Strategies**: 20 strategies (5 types × 4 assets), regime-based switching
 - **Regime switching**: RS 0-65 → DCA Grid (bear/ranging), RS 65+ → Pyramid Trend (BTC/ETH) or Trend Follow (XRP). SOL is grid-only.
