@@ -45,7 +45,18 @@ Available agents will pick up tasks matching their skills from the mission board
 - Use `uv add` for Python dependencies, never `pip install`
 
 ## Trading Operations
-- **Toolkit path**: `shell("cd /opt/inotagent-trading && .venv/bin/python -m cli.<module> <command>")`
+
+**IMPORTANT**: All trading CLI commands MUST use the trading venv python. Never use bare `python`.
+
+```bash
+# Correct — always use this pattern:
+cd /opt/inotagent-trading && .venv/bin/python -m cli.<module> <command>
+
+# WRONG — do NOT use these:
+# python -m cli.<module>          ← uses wrong venv, missing packages
+# pip install <package>           ← never install manually
+```
+
 - **Skills**: equip `trading_signal_workflow`, `trading_portfolio_management`, `trading_strategy_reference`, or `trading_sentiment_analysis` as needed
 - **Strategies**: 20 strategies (5 types × 4 assets), regime-based switching
 - **Regime switching**: RS 0-65 → DCA Grid (bear/ranging), RS 65+ → Pyramid Trend (BTC/ETH) or Trend Follow (XRP). SOL is grid-only.
@@ -56,7 +67,7 @@ Available agents will pick up tasks matching their skills from the mission board
 ### Available CLI modules
 | Module | Commands | Purpose |
 |--------|----------|---------|
-| `cli.signals` | `scan`, `scan --verbose` | Evaluate all strategies, show signals |
+| `cli.signals` | `scan` | Evaluate momentum/trend/breakout strategies |
 | `cli.grid` | `open <ASSET>`, `status`, `cancel`, `monitor` | DCA Grid cycle management |
 | `cli.trade` | `list-orders`, `list-positions`, `execute` | Order and position management |
 | `cli.portfolio` | `snapshot`, `pnl`, `summary` | Portfolio tracking and P&L |
@@ -64,16 +75,51 @@ Available agents will pick up tasks matching their skills from the mission board
 | `cli.market` | `overview`, `price`, `ta`, `fetch-daily`, `sentiment`, `fetch-sentiment`, `compute-daily-ta`, `coverage`, `sync-fees` | Market data and indicators |
 | `cli.backtest` | `run`, `sweep`, `list`, `view` | Single-strategy backtesting |
 | `cli.backtest_grid` | `run` | Grid-specific backtesting |
-| `cli.backtest_composite` | `run` | Full regime-switching backtest |
+| `cli.backtest_composite` | `run --asset <ASSET> --from <DATE> --to <DATE>` | Full regime-switching backtest |
 
 ### Key recurring tasks
-| Task | Schedule | Action |
-|------|----------|--------|
-| ROB-010 | Hourly | Grid open decisions + regime transitions + signal scan |
-| ROB-011 | Daily 10:00 UTC | Market overview + sentiment + P&L + grid status |
-| ROB-012 | Daily 02:00 UTC | Fetch daily OHLCV + compute TA + fetch sentiment + sync fees |
-| ROB-013 | Weekly Sun 12:00 UTC | Performance review per strategy |
-| ROB-014 | Weekly Sun 13:00 UTC | Backtest re-evaluation |
+
+**ROB-010 — Hourly Trading Decisions**
+```bash
+# 1. Check grid status
+cd /opt/inotagent-trading && .venv/bin/python -m cli.grid status
+# 2. Try opening grid cycles for each asset (grid has its own entry conditions)
+cd /opt/inotagent-trading && .venv/bin/python -m cli.grid open BTC
+cd /opt/inotagent-trading && .venv/bin/python -m cli.grid open ETH
+cd /opt/inotagent-trading && .venv/bin/python -m cli.grid open SOL
+cd /opt/inotagent-trading && .venv/bin/python -m cli.grid open XRP
+# 3. Scan for momentum/trend signals (separate from grid)
+cd /opt/inotagent-trading && .venv/bin/python -m cli.signals scan
+```
+
+**ROB-011 — Daily Market Overview + Sentiment + P&L**
+```bash
+cd /opt/inotagent-trading && .venv/bin/python -m cli.market overview
+cd /opt/inotagent-trading && .venv/bin/python -m cli.market sentiment
+cd /opt/inotagent-trading && .venv/bin/python -m cli.grid status
+cd /opt/inotagent-trading && .venv/bin/python -m cli.portfolio summary
+```
+
+**ROB-012 — Daily Data Refresh (02:00 UTC)**
+```bash
+cd /opt/inotagent-trading && .venv/bin/python -m cli.market fetch-daily --days 7
+cd /opt/inotagent-trading && .venv/bin/python -m cli.market compute-daily-ta
+cd /opt/inotagent-trading && .venv/bin/python -m cli.market fetch-sentiment
+cd /opt/inotagent-trading && .venv/bin/python -m cli.market sync-fees
+```
+
+**ROB-013 — Weekly Trading Performance Review**
+```bash
+cd /opt/inotagent-trading && .venv/bin/python -m cli.portfolio pnl
+cd /opt/inotagent-trading && .venv/bin/python -m cli.strategy list
+cd /opt/inotagent-trading && .venv/bin/python -m cli.grid status
+```
+
+**ROB-014 — Weekly Backtest Re-evaluation**
+```bash
+cd /opt/inotagent-trading && .venv/bin/python -m cli.backtest_composite run --asset BTC --from <6mo_ago> --to <today>
+cd /opt/inotagent-trading && .venv/bin/python -m cli.backtest_composite run --asset ETH --from <6mo_ago> --to <today>
+```
 
 ## Red Lines
 - **No live trades without explicit Boss approval** — use paper trading for testing
