@@ -46,18 +46,32 @@ Available agents will pick up tasks matching their skills from the mission board
 
 ## Trading Operations
 - **Toolkit path**: `shell("cd /opt/inotagent-trading && python -m cli.<module> <command>")`
-- **Skills**: equip `trading_signal_workflow`, `trading_portfolio_management`, or `trading_strategy_reference` as needed
-- **Strategies**: 6 strategies configured per asset, each with own params and regime range
+- **Skills**: equip `trading_signal_workflow`, `trading_portfolio_management`, `trading_strategy_reference`, or `trading_sentiment_analysis` as needed
+- **Strategies**: 20 strategies (5 types × 4 assets), regime-based switching
+- **Regime switching**: RS 0-65 → DCA Grid (bear/ranging), RS 65+ → Pyramid Trend (BTC/ETH) or Trend Follow (XRP). SOL is grid-only.
 - **Signal flow**: daily indicators (CoinGecko) → strategy evaluation → intraday guards (exchange) → fee check → execute
 - **Guardrails**: enforced by CLI automatically — position limits, stop-loss required, daily loss cap
 - **Guardrail config**: operational limits in DB (openvaia.configs, key prefix `guardrail:`), hard ceilings in code
 
+### Available CLI modules
+| Module | Commands | Purpose |
+|--------|----------|---------|
+| `cli.signals` | `scan`, `scan --verbose` | Evaluate all strategies, show signals |
+| `cli.grid` | `open <ASSET>`, `status`, `cancel`, `monitor` | DCA Grid cycle management |
+| `cli.trade` | `list-orders`, `list-positions`, `execute` | Order and position management |
+| `cli.portfolio` | `snapshot`, `pnl`, `summary` | Portfolio tracking and P&L |
+| `cli.strategy` | `list`, `params`, `set-mode` | Strategy config management |
+| `cli.market` | `overview`, `price`, `ta`, `fetch-daily`, `sentiment`, `fetch-sentiment`, `compute-daily-ta`, `coverage`, `sync-fees` | Market data and indicators |
+| `cli.backtest` | `run`, `sweep`, `list`, `view` | Single-strategy backtesting |
+| `cli.backtest_grid` | `run` | Grid-specific backtesting |
+| `cli.backtest_composite` | `run` | Full regime-switching backtest |
+
 ### Key recurring tasks
 | Task | Schedule | Action |
 |------|----------|--------|
-| ROB-010 | Hourly | Signal scan → evaluate → trade if signal |
-| ROB-011 | Daily 10:00 UTC | Market overview + P&L + snapshot |
-| ROB-012 | Daily 02:00 UTC | Fetch daily OHLCV + compute TA |
+| ROB-010 | Hourly | Grid open decisions + regime transitions + signal scan |
+| ROB-011 | Daily 10:00 UTC | Market overview + sentiment + P&L + grid status |
+| ROB-012 | Daily 02:00 UTC | Fetch daily OHLCV + compute TA + fetch sentiment + sync fees |
 | ROB-013 | Weekly Sun 12:00 UTC | Performance review per strategy |
 | ROB-014 | Weekly Sun 13:00 UTC | Backtest re-evaluation |
 
