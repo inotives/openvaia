@@ -22,6 +22,16 @@ models:
     context_window: 192000  # Staying just under the 196k native cap for stability
     max_tokens: 8192        # Prevents gateway timeouts on long generations
 
+  # Latest google opensource gemma model
+  - id: gemma-4-31b-it
+    provider: nvidia
+    model: google/gemma-4-31b-it
+    api_key_env: NVIDIA_API_KEY
+    base_url: https://integrate.api.nvidia.com/v1
+    temperature: 0.6
+    context_window: 192000  # Staying just under the 196k native cap for stability
+    max_tokens: 8192        # Prevents gateway timeouts on long generations
+
   # The Reliable All-Rounder
   - id: nvidia-mistral-large-3
     provider: nvidia

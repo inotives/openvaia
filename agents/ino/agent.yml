@@ -1,7 +1,8 @@
 # Ino's agent configuration - ino is general thinker hence give qwen model to it
 role: Global Financial Researcher
-model: nemotron-3-super
+model: gemma-4-31b-it
 fallbacks:
+  - nemotron-3-super
   - nvidia-minimax-2.5
   - nvidia-deepseek-v3.2
 
