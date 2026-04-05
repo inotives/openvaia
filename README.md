@@ -88,7 +88,8 @@ Agent identity files (AGENTS.md, TOOLS.md) and credentials (.env) carry over unc
 | Admin UI | [Next.js](https://nextjs.org) (App Router) + [Ant Design](https://ant.design) |
 | Coding tools | Native tools (read_file, write_file, shell), [GitHub CLI](https://cli.github.com/) |
 | Containers | Docker + Docker Compose |
-| Default LLM | NVIDIA NIM MiniMax-2.5 |
+| Trading toolkit | **inotagent-trading** (strategies, pollers, CLI, backtester) |
+| Default LLM | NVIDIA NIM Gemma-4 / MiniMax-2.5 (configurable per agent) |
 
 ### Python Dependencies
 
@@ -118,6 +119,13 @@ Only providers with API keys set are included in the config. No startup failures
 
 ## Quick Start
 
+### Prerequisites
+- Docker + Docker Compose
+- [uv](https://github.com/astral-sh/uv) (Python package manager)
+- [dbmate](https://github.com/amacneil/dbmate) (DB migrations)
+
+### First-time Setup
+
 ```bash
 git clone https://github.com/inotives/openvaia.git
 cd openvaia
@@ -125,21 +133,48 @@ cd openvaia
 # Generate .env files from templates
 make bootstrap
 
-# Edit .env and agents/ino/.env with your credentials
-# Then deploy with local Postgres:
+# Edit credentials:
+#   .env                    — Postgres password
+#   agents/ino/.env         — LLM API keys (NVIDIA_API_KEY, etc.)
+#   agents/robin/.env       — LLM + exchange keys (CRYPTOCOM_API_KEY, COINGECKO_API_KEY)
+#   inotagent-trading/.env  — DB + exchange + CoinGecko keys
+
+# Full deployment (Postgres + agents + pollers + UI + seed everything):
+make clean-slate
+
+# Or step-by-step:
+make deploy-all             # Start Postgres + agents + pollers + UI
+make import-skills          # Import 106 skills into DB
+make seed-tasks             # Seed 13 recurring tasks
+make seed-chains            # Seed 12 skill chains
+make trading-setup          # Seed strategies + sync CoinGecko + OHLCV + TA
+```
+
+### Single Agent Mode
+
+```bash
+# Edit .env: AGENTS=ino (default: ino,robin)
 make deploy-all
 
-# Verify
-make ps
-make logs AGENT=ino
+# Or override inline:
+AGENTS=robin make deploy-all
+```
+
+### Verify
+
+```bash
+make ps                     # All containers running
+make logs AGENT=ino         # Agent logs
+make trading-status         # Poller health
 ```
 
 You should see:
 ```
-=== inotagent boot: ino ===
-Agent 'ino' initialized with model 'nvidia-minimax-2.5' (22 tools, db=yes)
-Heartbeat started for ino
+Agent 'ino' initialized with model 'gemma-4-31b-it' (22 tools, db=yes)
 Discord connected: ino#0021
+[public] Loaded 8 pairs from DB
+[ta] Computed daily TA for 4 assets
+[private] Updated fees for 4 pairs
 ```
 
 Full setup guide: [Project Details](docs/project_specs.md)
@@ -150,15 +185,16 @@ Full setup guide: [Project Details](docs/project_specs.md)
 - **22-tool system** — shell, files, browser, Discord, tasks, messaging, memory, research, skills, skill_propose, skill_equip, resources, email, and delegate (sub-agents).
 - **Dynamic skill equipping** — tasks auto-match to skill chains based on tags. Agent loads only the skills needed for the current phase, not everything at once.
 - **Sub-agents** — `delegate` tool spawns ephemeral specialist LLM calls using skills as system prompts. Code review, security scan, QA — one call, no overhead.
-- **103 skills library** — 5 global + 98 non-global, extracted from community templates, superpowers, gstack, and platform workflows. Import via `make import-skills`.
+- **106 skills library** — 6 global + 100 non-global, extracted from community templates, superpowers, gstack, and platform workflows. Import via `make import-skills`.
 - **Self-evolving skills** — agents propose skill improvements (FIX/DERIVED/CAPTURED) via `skill_propose` tool. Human reviews and approves. Full version history with lineage tracking.
 - **Multi-channel inbox** — Discord (discord.py), Slack (Socket Mode), Telegram (with allowFrom security).
 - **Hybrid memory search** — Postgres FTS (30%) + pgvector semantic embedding (70%) — finds relevant memories even without keyword overlap.
 - **Recurring tasks** — `schedule:daily@00:00`, `schedule:hourly`, `schedule:monthly` tags on tasks. Heartbeat resets completed tasks automatically.
 - **Runtime-configurable** — change model, fallbacks, mission tags via DB or Admin UI. No redeploy needed.
+- **Trading toolkit** — 20 strategies (5 types × 4 assets), regime-based switching (grid in bear, pyramid/trend in bull), 3 pollers (public/private/TA), composite backtester, sentiment integration, CoinGecko universe sync (17k+ coins).
 - **Prompt generator** — `!prompt` on Discord or `/prompt-gen` in Admin UI. Enhances rough instructions into structured agent prompts.
 - **Admin UI** — Next.js + Ant Design dashboard: kanban, agent detail with chat, skills, resources, prompt gen, config.
-- **350 unit tests** across the runtime.
+- **350 unit tests** across the runtime + 30 trading tests.
 
 ## FAQ
 
