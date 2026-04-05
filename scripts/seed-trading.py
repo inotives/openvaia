@@ -97,19 +97,19 @@ STRATEGIES = [
             "position": {"capital_per_trade_pct": 10},
         },
     },
-    # Trend follow — ride strong uptrends with ATR trailing stop
+    # Trend follow — ride strong uptrends with ATR trailing stop (tuned on bull period Jun 2024 - Nov 2025)
     {
         "name": "btc_trend_follow", "type": "trend_follow", "asset": "BTC",
         "params": {
-            "entry": {"min_regime_score": 61, "min_adx": 30, "rsi_entry_max": 70, "max_atr_pct": 6.0},
-            "exit": {"atr_stop_multiplier": 2.0, "atr_trail_multiplier": 2.0, "take_profit_pct": 20},
+            "entry": {"min_regime_score": 40, "min_adx": 15, "rsi_entry_max": 70, "max_atr_pct": 6.0},
+            "exit": {"atr_stop_multiplier": 2.0, "atr_trail_multiplier": 4.0, "take_profit_pct": 20},
             "position": {"capital_per_trade_pct": 15, "risk_pct_per_trade": 1.0},
         },
     },
     {
         "name": "eth_trend_follow", "type": "trend_follow", "asset": "ETH",
         "params": {
-            "entry": {"min_regime_score": 50, "min_adx": 25, "rsi_entry_max": 70, "max_atr_pct": 6.0},
+            "entry": {"min_regime_score": 61, "min_adx": 25, "rsi_entry_max": 70, "max_atr_pct": 6.0},
             "exit": {"atr_stop_multiplier": 2.0, "atr_trail_multiplier": 2.0, "take_profit_pct": 20},
             "position": {"capital_per_trade_pct": 15, "risk_pct_per_trade": 1.0},
         },
@@ -117,7 +117,7 @@ STRATEGIES = [
     {
         "name": "sol_trend_follow", "type": "trend_follow", "asset": "SOL",
         "params": {
-            "entry": {"min_regime_score": 50, "min_adx": 30, "rsi_entry_max": 70, "max_atr_pct": 6.0},
+            "entry": {"min_regime_score": 50, "min_adx": 15, "rsi_entry_max": 70, "max_atr_pct": 6.0},
             "exit": {"atr_stop_multiplier": 2.0, "atr_trail_multiplier": 2.0, "take_profit_pct": 20},
             "position": {"capital_per_trade_pct": 15, "risk_pct_per_trade": 1.0},
         },
@@ -125,12 +125,122 @@ STRATEGIES = [
     {
         "name": "xrp_trend_follow", "type": "trend_follow", "asset": "XRP",
         "params": {
-            "entry": {"min_regime_score": 50, "min_adx": 20, "rsi_entry_max": 70, "max_atr_pct": 6.0},
-            "exit": {"atr_stop_multiplier": 2.0, "atr_trail_multiplier": 2.0, "take_profit_pct": 20},
+            "entry": {"min_regime_score": 50, "min_adx": 15, "rsi_entry_max": 70, "max_atr_pct": 6.0},
+            "exit": {"atr_stop_multiplier": 2.0, "atr_trail_multiplier": 3.0, "take_profit_pct": 20},
             "position": {"capital_per_trade_pct": 15, "risk_pct_per_trade": 1.0},
         },
     },
-    # DCA Grid — maker-only execution, regime-based mode switching
+    # Pyramid Trend — scale into winners with asymmetric LIFO exits (tuned)
+    {
+        "name": "btc_pyramid_trend", "type": "pyramid_trend", "asset": "BTC",
+        "params": {
+            "entry": {"min_regime_score": 40, "min_adx": 15, "rsi_entry_max": 75, "min_conditions": 4},
+            "pyramid": {
+                "allocations": {"A": 40, "B": 30, "C": 20, "D": 10},
+                "thresholds": {"B": 5.0, "C": 12.0, "D": 20.0},
+                "cooldown_days": 5,
+            },
+            "exit": {
+                "lot_d_trail_pct": 5.0, "lot_d_rsi_exit": 80,
+                "lot_c_trail_pct": 10.0,
+                "lot_b_trail_pct": 12.0,
+                "lot_a_exit_regime": 45, "lot_a_trail_pct": 25.0,
+                "hard_stop_pct": 5.0,
+            },
+            "position": {"capital_per_trade_pct": 20},
+        },
+    },
+    {
+        "name": "eth_pyramid_trend", "type": "pyramid_trend", "asset": "ETH",
+        "params": {
+            "entry": {"min_regime_score": 40, "min_adx": 15, "rsi_entry_max": 75, "min_conditions": 4},
+            "pyramid": {
+                "allocations": {"A": 40, "B": 30, "C": 20, "D": 10},
+                "thresholds": {"B": 3.0, "C": 12.0, "D": 20.0},
+                "cooldown_days": 5,
+            },
+            "exit": {
+                "lot_d_trail_pct": 5.0, "lot_d_rsi_exit": 80,
+                "lot_c_trail_pct": 10.0,
+                "lot_b_trail_pct": 15.0,
+                "lot_a_exit_regime": 45, "lot_a_trail_pct": 25.0,
+                "hard_stop_pct": 5.0,
+            },
+            "position": {"capital_per_trade_pct": 20},
+        },
+    },
+    {
+        "name": "sol_pyramid_trend", "type": "pyramid_trend", "asset": "SOL",
+        "params": {
+            "entry": {"min_regime_score": 45, "min_adx": 15, "rsi_entry_max": 75, "min_conditions": 4},
+            "pyramid": {
+                "allocations": {"A": 40, "B": 30, "C": 20, "D": 10},
+                "thresholds": {"B": 5.0, "C": 12.0, "D": 20.0},
+                "cooldown_days": 5,
+            },
+            "exit": {
+                "lot_d_trail_pct": 3.0, "lot_d_rsi_exit": 80,
+                "lot_c_trail_pct": 7.0,
+                "lot_b_trail_pct": 15.0,
+                "lot_a_exit_regime": 40, "lot_a_trail_pct": 25.0,
+                "hard_stop_pct": 5.0,
+            },
+            "position": {"capital_per_trade_pct": 20},
+        },
+    },
+    {
+        "name": "xrp_pyramid_trend", "type": "pyramid_trend", "asset": "XRP",
+        "params": {
+            "entry": {"min_regime_score": 45, "min_adx": 15, "rsi_entry_max": 75, "min_conditions": 4},
+            "pyramid": {
+                "allocations": {"A": 40, "B": 30, "C": 20, "D": 10},
+                "thresholds": {"B": 5.0, "C": 12.0, "D": 20.0},
+                "cooldown_days": 5,
+            },
+            "exit": {
+                "lot_d_trail_pct": 3.0, "lot_d_rsi_exit": 80,
+                "lot_c_trail_pct": 7.0,
+                "lot_b_trail_pct": 15.0,
+                "lot_a_exit_regime": 40, "lot_a_trail_pct": 25.0,
+                "hard_stop_pct": 5.0,
+            },
+            "position": {"capital_per_trade_pct": 20},
+        },
+    },
+    # Volatility Breakout — catches sharp bursts from BB squeeze breakouts
+    {
+        "name": "btc_volatility_breakout", "type": "volatility_breakout", "asset": "BTC",
+        "params": {
+            "entry": {"max_bb_width_squeeze": 3.0, "adx_threshold": 20, "rvol_min": 1.5, "min_conditions": 3},
+            "exit": {"stop_atr_mult": 1.5, "time_stop_days": 3},
+            "position": {"capital_per_trade_pct": 5, "risk_pct_per_trade": 0.5},
+        },
+    },
+    {
+        "name": "eth_volatility_breakout", "type": "volatility_breakout", "asset": "ETH",
+        "params": {
+            "entry": {"max_bb_width_squeeze": 3.5, "adx_threshold": 20, "rvol_min": 1.5, "min_conditions": 3},
+            "exit": {"stop_atr_mult": 1.5, "time_stop_days": 3},
+            "position": {"capital_per_trade_pct": 5, "risk_pct_per_trade": 0.5},
+        },
+    },
+    {
+        "name": "sol_volatility_breakout", "type": "volatility_breakout", "asset": "SOL",
+        "params": {
+            "entry": {"max_bb_width_squeeze": 4.0, "adx_threshold": 20, "rvol_min": 1.5, "min_conditions": 3},
+            "exit": {"stop_atr_mult": 1.5, "time_stop_days": 3},
+            "position": {"capital_per_trade_pct": 5, "risk_pct_per_trade": 0.5},
+        },
+    },
+    {
+        "name": "xrp_volatility_breakout", "type": "volatility_breakout", "asset": "XRP",
+        "params": {
+            "entry": {"max_bb_width_squeeze": 4.0, "adx_threshold": 20, "rvol_min": 1.5, "min_conditions": 3},
+            "exit": {"stop_atr_mult": 1.5, "time_stop_days": 3},
+            "position": {"capital_per_trade_pct": 5, "risk_pct_per_trade": 0.5},
+        },
+    },
+    # DCA Grid — maker-only execution, regime-based mode switching (tuned on 6mo bear data)
     {
         "name": "btc_dca_grid", "type": "dca_grid", "asset": "BTC",
         "params": {
@@ -146,14 +256,16 @@ STRATEGIES = [
                 "max_regime_score": 65,
                 "rsi_entry_max": 60,
                 "max_atr_pct": 6.0,
+                "defensive_mode_enabled": True,
+                "defensive_rsi_oversold": 25,
             },
             "grid": {
                 "num_levels": 5,
                 "weights": [1, 1, 2, 3, 3],
                 "volatility_regimes": {
-                    "low": {"atr_mult": 0.4, "profit_target": 1.0},
-                    "normal": {"atr_mult": 0.5, "profit_target": 1.5},
-                    "high": {"atr_mult": 0.7, "profit_target": 2.5},
+                    "low": {"atr_mult": 0.15, "profit_target": 1.0},
+                    "normal": {"atr_mult": 0.15, "profit_target": 1.5},
+                    "high": {"atr_mult": 0.3, "profit_target": 2.0},
                 },
             },
             "exit": {
@@ -188,9 +300,9 @@ STRATEGIES = [
                 "num_levels": 5,
                 "weights": [1, 1, 2, 3, 3],
                 "volatility_regimes": {
-                    "low": {"atr_mult": 0.4, "profit_target": 1.5},
-                    "normal": {"atr_mult": 0.5, "profit_target": 2.0},
-                    "high": {"atr_mult": 0.7, "profit_target": 2.5},
+                    "low": {"atr_mult": 0.15, "profit_target": 1.5},
+                    "normal": {"atr_mult": 0.2, "profit_target": 2.0},
+                    "high": {"atr_mult": 0.4, "profit_target": 2.5},
                 },
             },
             "exit": {
@@ -225,9 +337,9 @@ STRATEGIES = [
                 "num_levels": 5,
                 "weights": [1, 1, 2, 3, 3],
                 "volatility_regimes": {
-                    "low": {"atr_mult": 0.5, "profit_target": 2.0},
-                    "normal": {"atr_mult": 0.6, "profit_target": 2.5},
-                    "high": {"atr_mult": 0.8, "profit_target": 3.0},
+                    "low": {"atr_mult": 0.2, "profit_target": 2.0},
+                    "normal": {"atr_mult": 0.3, "profit_target": 2.5},
+                    "high": {"atr_mult": 0.5, "profit_target": 3.0},
                 },
             },
             "exit": {
@@ -262,9 +374,9 @@ STRATEGIES = [
                 "num_levels": 5,
                 "weights": [1, 1, 2, 3, 3],
                 "volatility_regimes": {
-                    "low": {"atr_mult": 0.5, "profit_target": 2.0},
-                    "normal": {"atr_mult": 0.6, "profit_target": 3.0},
-                    "high": {"atr_mult": 0.8, "profit_target": 3.5},
+                    "low": {"atr_mult": 0.2, "profit_target": 2.0},
+                    "normal": {"atr_mult": 0.3, "profit_target": 3.0},
+                    "high": {"atr_mult": 0.5, "profit_target": 3.5},
                 },
             },
             "exit": {

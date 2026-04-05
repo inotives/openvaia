@@ -12,4 +12,7 @@ RUN uv sync --no-dev --frozen 2>/dev/null || uv sync --no-dev
 # Copy source
 COPY . .
 
+# Use venv python (uv sync installs to .venv/)
+ENV PATH="/opt/inotagent-trading/.venv/bin:$PATH"
+
 CMD ["python", "-m", "poller.public"]

@@ -33,6 +33,7 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+      - ./inotagent-trading/.env
     environment:
       AGENTS: ${AGENTS:-ino,robin}
       AGENT_NAME: ${AGENTS:-ino,robin}
@@ -162,13 +163,13 @@ services:
           cpus: "0.5"
           memory: 512m
 
-  # Trading pollers — start with: make trading-start
+  # Trading pollers — start with infra profile or: make trading-start
   poller-public:
     build:
       context: ./inotagent-trading
     command: python -m poller.public
     container_name: openvaia_poller_public
-    profiles: ["trading"]
+    profiles: ["infra", "trading"]
     env_file: ./inotagent-trading/.env
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
@@ -185,7 +186,7 @@ services:
       context: ./inotagent-trading
     command: python -m poller.private
     container_name: openvaia_poller_private
-    profiles: ["trading"]
+    profiles: ["infra", "trading"]
     env_file: ./inotagent-trading/.env
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
@@ -202,7 +203,7 @@ services:
       context: ./inotagent-trading
     command: python -m poller.ta
     container_name: openvaia_poller_ta
-    profiles: ["trading"]
+    profiles: ["infra", "trading"]
     env_file: ./inotagent-trading/.env
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:-postgres}

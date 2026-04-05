@@ -6,7 +6,7 @@
 
 ## Summary
 
-DCA Grid trading with two modes (Batch Grid + Adaptive FIFO Grid), regime-based switching, sentiment integration, maker-only execution, and exchange-side stop-loss.
+Full regime-based trading system: DCA Grid (bear/ranging) + Pyramid Trend (bull, BTC/ETH) + Trend Follow (bull, XRP). Includes sentiment integration, maker-only execution, composite backtester, CoinGecko universe sync, and clean-slate deployment pipeline.
 
 ## Changes
 
@@ -79,3 +79,55 @@ DCA Grid trading with two modes (Batch Grid + Adaptive FIFO Grid), regime-based 
 - [x] ETH/SOL net positive (+0.1-0.4%) in -50-62% bear market
 - [x] Entrypoint: removed migration from Docker (run from host only via `make local-migrate`)
 - [x] `clean-slate`: runs migrations from host before deploying containers
+
+### Phase 5.5: Strategy Param Tuning
+- [x] Grid param sweep: tighter ATR spacing (0.15x-0.3x) outperforms default (0.4x-0.8x)
+- [x] BTC grid: 0.15x ATR low/normal, 0.3x high — more cycles, better fill rate
+- [x] ETH grid: 0.15x low, 0.2x normal, 0.4x high
+- [x] SOL/XRP grid: 0.2x low, 0.3x normal, 0.5x high
+- [x] BTC defensive mode enabled in seed
+- [x] Trend follow re-tuned on bull period (Jun 2024 - Nov 2025)
+- [x] BTC trend: RS>40, ADX>15, trail 4.0x ATR (+7.1% bull, was -6.1%)
+- [x] ETH trend: RS>61, ADX>25, trail 2.0x ATR (+0.3% bull)
+- [x] SOL trend: RS>50, ADX>15, trail 2.0x ATR (-0.8% bull)
+- [x] XRP trend: RS>50, ADX>15, trail 3.0x ATR (+41.7% bull)
+- [x] Seed script updated with all tuned params (grid + trend follow)
+
+### Phase 5.5b: Pyramid Trend Strategy
+- [x] `strategies/pyramid_trend.py` — scale into winners with asymmetric LIFO exits
+- [x] 4 lots: A (40%, exits on regime flip) → B (30%, 12-15% trail) → C (20%, 10% trail) → D (10%, 5% trail)
+- [x] Entry: 20d high breakout + golden cross + ADX + RSI < 75, min 4/5 conditions
+- [x] Pyramiding: add lots at +3-5% (B), +12% (C), +20% (D) from base entry
+- [x] Hard stop: 5% below base entry exits all lots
+- [x] Per-lot exit conditions: D (tight trail/RSI), C (medium trail/MACD), B (loose trail/EMA50), A (regime flip)
+- [x] Pyramid backtester in `cli/backtest.py` — multi-lot position tracking with LIFO exits
+- [x] Tuned: BTC (DT:5%, CT:10%, BT:12%, exit RS<45), ETH (BT:15%, pyramid B@+3%)
+- [x] BTC: +4.9% bull (65% WR), ETH: +6.8% burst period (77% WR)
+- [x] Seeded: btc/eth_pyramid_trend with tuned params, sol/xrp_pyramid_trend (inactive)
+
+### Phase 5.5c: Volatility Breakout Strategy
+- [x] Seeded: btc/eth/sol/xrp_volatility_breakout — BB squeeze → breakout + volume confirmation
+- [x] Supplementary role — low trade count but high quality signals
+
+### Phase 6: Composite Backtester + Regime Switching
+- [x] `cli/backtest_composite.py` — full regime-switching backtest across strategies
+- [x] RS 0-65: DCA Grid, RS 65+: Pyramid Trend (BTC/ETH) or Trend Follow (XRP)
+- [x] SOL set to grid-only — trend follow disabled (was -$117 drag, now +1.0%)
+- [x] Compounding enabled by default — matches live system (uses current equity as capital base)
+- [x] Full period results (22mo): BTC +9.2%, ETH +6.7%, SOL +1.0%, XRP +39.3%
+- [x] Bear period (5mo): all 4 assets positive alpha (+41-55%), zero trend trades, grid-only
+- [x] 20 strategies seeded across 5 types × 4 assets
+
+### Phase 7: Data Pipeline + Deployment Fixes
+- [x] `cli.market sync-coingecko` — syncs 17,839 coins + 444 platforms into ext_coingecko_assets/platforms
+- [x] `cli.market fetch-daily` — volume from `/coins/markets` attached to yesterday's completed day
+- [x] CoinGecko API key support (`x_cg_demo_api_key` header) — 30 calls/min vs 10/min
+- [x] Skip today's partial OHLC candle — only upsert completed days
+- [x] `fetch-daily --days` accepts CoinGecko valid values: 1, 7, 14, 30, 90, 180, 365
+- [x] `wipe-db` drops both `openvaia` and `trading_platform` schemas
+- [x] Pollers added to `infra` profile — start automatically with `deploy-all` / `clean-slate`
+- [x] Poller Dockerfile: added `.venv/bin` to PATH (fix `No module 'pandas'` crash)
+- [x] Agents container: added `inotagent-trading/.env` as second env_file (exchange + CoinGecko keys)
+- [x] `clean-slate` pipeline: build infra profile images before starting containers
+- [x] `trading-setup` pipeline: seed → sync-coingecko → seed-ohlcv → fetch-daily → backfill-ta
+- [x] Makefile: `trading-sync-coingecko`, `trading-fetch-daily DAYS=N` targets added

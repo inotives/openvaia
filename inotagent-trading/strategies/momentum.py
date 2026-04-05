@@ -119,6 +119,7 @@ from strategies.trend_follow import TrendFollowStrategy
 from strategies.volatility_breakout import VolatilityBreakoutStrategy
 from strategies.mean_reversion import MeanReversionStrategy
 from strategies.rsi_divergence import RSIDivergenceStrategy
+from strategies.pyramid_trend import PyramidTrendStrategy
 
 STRATEGY_REGISTRY: dict[str, type[BaseStrategy]] = {
     "momentum": MomentumStrategy,
@@ -127,6 +128,7 @@ STRATEGY_REGISTRY: dict[str, type[BaseStrategy]] = {
     "volatility_breakout": VolatilityBreakoutStrategy,
     "mean_reversion": MeanReversionStrategy,
     "rsi_divergence": RSIDivergenceStrategy,
+    "pyramid_trend": PyramidTrendStrategy,
 }
 
 
