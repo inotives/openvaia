@@ -180,23 +180,23 @@ cron-remove:
 
 # Import skills from inotagent/skills/ into DB (skip existing)
 import-skills:
-	POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia} python3 scripts/import-skills.py
+	@cd inotagent && POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD ../.env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia} uv run python ../scripts/import-skills.py
 
 # Reset a skill to file version: make reset-skill NAME=code_review
 reset-skill:
-	POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia} python3 scripts/import-skills.py --reset $(NAME)
+	@cd inotagent && POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD ../.env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia} uv run python ../scripts/import-skills.py --reset $(NAME)
 
 # Force re-import all skills (delete + re-insert)
 reimport-skills:
-	POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia} python3 scripts/import-skills.py --force
+	@cd inotagent && POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD ../.env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia} uv run python ../scripts/import-skills.py --force
 
 # Seed recurring tasks for proactive agent behavior
 seed-tasks:
-	POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia} python3 scripts/seed-recurring-tasks.py
+	@cd inotagent && POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD ../.env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia} uv run python ../scripts/seed-recurring-tasks.py
 
 # Seed skill chains for dynamic skill equipping
 seed-chains:
-	POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia} python3 scripts/seed-skill-chains.py
+	@cd inotagent && POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD ../.env | cut -d= -f2) POSTGRES_DB=inotives PLATFORM_SCHEMA=$${PLATFORM_SCHEMA:-openvaia} uv run python ../scripts/seed-skill-chains.py
 
 # ============================================================
 # Local Development (without Docker)
@@ -315,7 +315,7 @@ TRADING_DB_ENV = POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT
 TRADING_CG_ENV = COINGECKO_API_KEY=$$(grep COINGECKO_API_KEY agents/robin/.env 2>/dev/null | head -1 | cut -d= -f2)
 
 trading-seed:
-	$(TRADING_DB_ENV) python3 scripts/seed-trading.py
+	@cd inotagent-trading && $(TRADING_DB_ENV) uv run python ../scripts/seed-trading.py
 
 trading-sync-coingecko:
 	@echo "Syncing CoinGecko coin universe + platforms..."
