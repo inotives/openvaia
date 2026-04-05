@@ -1,4 +1,4 @@
-.PHONY: deploy deploy-all start stop restart down ps logs ui ui-logs ui-dev ui-dev-restart ui-dev-stop ui-dev-build shell test bootstrap build build-base task-list task-get task-create task-update task-summary task-board repo-list repo-add repo-remove repo-agent inotagent-test trading-start trading-stop trading-status trading-logs trading-build trading-migrate trading-seed trading-test
+.PHONY: deploy deploy-all start stop restart down ps logs ui ui-logs ui-dev ui-dev-restart ui-dev-stop ui-dev-build shell test bootstrap build build-base task-list task-get task-create task-update task-summary task-board repo-list repo-add repo-remove repo-agent inotagent-test trading-start trading-stop trading-status trading-logs trading-build trading-migrate trading-seed trading-sync-coingecko trading-fetch-daily trading-test
 
 build-base:
 	docker build -f inotagent/Dockerfile -t inotagent-base .
@@ -36,14 +36,20 @@ wipe-db:
 	docker compose --profile infra up -d postgres
 	@echo "Waiting for Postgres to be healthy..."
 	@until docker exec openvaia_postgres pg_isready -U inotives -q 2>/dev/null; do sleep 1; done
-	docker exec openvaia_postgres psql -U inotives -d inotives -c "DROP SCHEMA IF EXISTS $${PLATFORM_SCHEMA:-openvaia} CASCADE; DELETE FROM public.schema_migrations WHERE TRUE;" 2>/dev/null || true
+	docker exec openvaia_postgres psql -U inotives -d inotives -c "DROP SCHEMA IF EXISTS $${PLATFORM_SCHEMA:-openvaia} CASCADE; DROP SCHEMA IF EXISTS trading_platform CASCADE; DELETE FROM public.schema_migrations WHERE TRUE;" 2>/dev/null || true
 	docker compose --profile infra down
 	@echo "DB wiped. Run 'make deploy-all' to rebuild."
 
 # Clean slate: wipe DB + rebuild + wait for migrations + import skills
-clean-slate: wipe-db deploy-all
-	@echo "Waiting for migrations to complete..."
-	@sleep 15
+clean-slate: wipe-db
+	docker compose --profile infra up -d postgres
+	@echo "Waiting for Postgres..."
+	@until docker exec openvaia_postgres pg_isready -U inotives -q 2>/dev/null; do sleep 1; done
+	$(MAKE) local-migrate
+	$(MAKE) build
+	docker compose --profile infra build
+	docker compose --profile infra up -d
+	@sleep 5
 	$(MAKE) import-skills
 	$(MAKE) seed-tasks
 	$(MAKE) seed-chains
@@ -306,9 +312,14 @@ trading-stop:
 trading-migrate: local-migrate
 
 TRADING_DB_ENV = POSTGRES_HOST=localhost POSTGRES_PORT=$${EXTERNAL_POSTGRES_PORT:-5445} POSTGRES_USER=inotives POSTGRES_PASSWORD=$$(grep POSTGRES_PASSWORD .env | cut -d= -f2) POSTGRES_DB=inotives TRADING_SCHEMA=trading_platform
+TRADING_CG_ENV = COINGECKO_API_KEY=$$(grep COINGECKO_API_KEY agents/robin/.env 2>/dev/null | head -1 | cut -d= -f2)
 
 trading-seed:
 	$(TRADING_DB_ENV) python3 scripts/seed-trading.py
+
+trading-sync-coingecko:
+	@echo "Syncing CoinGecko coin universe + platforms..."
+	@cd inotagent-trading && $(TRADING_DB_ENV) $(TRADING_CG_ENV) uv run python -m cli.market sync-coingecko
 
 trading-seed-ohlcv:
 	@cd inotagent-trading && for pair in "BTC btc" "ETH eth" "SOL sol" "XRP xrp"; do \
@@ -322,14 +333,18 @@ trading-seed-ohlcv:
 		fi; \
 	done
 
+trading-fetch-daily: ## Fetch daily OHLCV from CoinGecko. DAYS=1|7|14|30 (free), 90|180|365 (paid)
+	@echo "Fetching latest daily OHLCV from CoinGecko ($(or $(DAYS),7) days)..."
+	@cd inotagent-trading && $(TRADING_DB_ENV) $(TRADING_CG_ENV) uv run python -m cli.market fetch-daily --days $(or $(DAYS),7)
+
 trading-backfill-ta:
 	@cd inotagent-trading && for asset in BTC ETH SOL XRP; do \
 		echo "Backfilling TA for $$asset..."; \
 		$(TRADING_DB_ENV) uv run python -m cli.market backfill-daily-ta --asset $$asset; \
 	done
 
-trading-setup: trading-seed trading-seed-ohlcv trading-backfill-ta
-	@echo "Trading setup complete: reference data + OHLCV + TA indicators"
+trading-setup: trading-seed trading-sync-coingecko trading-seed-ohlcv trading-fetch-daily trading-backfill-ta
+	@echo "Trading setup complete: reference data + CoinGecko universe + OHLCV + TA indicators"
 
 trading-test:
 	cd inotagent-trading && make test

@@ -33,6 +33,14 @@ def _run_backtest(
     sweep_id: str | None = None, created_by: str = "cli",
 ) -> dict:
     """Execute a single backtest run. Returns result dict."""
+    if strategy_type == "pyramid_trend":
+        return _run_pyramid_backtest(
+            conn, s, strategy_name, strategy_type, params,
+            asset_id, venue_id, date_from, date_to,
+            initial_capital, slippage_pct, maker_fee, taker_fee,
+            sweep_id, created_by,
+        )
+
     start_time = time.monotonic()
 
     strategy = get_strategy(strategy_type, params)
@@ -321,6 +329,372 @@ def _run_backtest(
         )
 
     # Save equity curve
+    for e in equity_curve:
+        conn.execute(
+            f"""INSERT INTO {s}.backtest_equity
+                (run_id, date, portfolio_value_usd, cash_usd, positions_value_usd,
+                 hodl_value_usd, drawdown_pct)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (run_id, e["date"], e["portfolio_value_usd"], e["cash_usd"],
+             e["positions_value_usd"], e["hodl_value_usd"], e["drawdown_pct"]),
+        )
+
+    conn.commit()
+    return result
+
+
+def _run_pyramid_backtest(
+    conn, s: str, strategy_name: str, strategy_type: str, params: dict,
+    asset_id: int, venue_id: int, date_from: date, date_to: date,
+    initial_capital: Decimal, slippage_pct: Decimal,
+    maker_fee: Decimal | None, taker_fee: Decimal | None,
+    sweep_id: str | None = None, created_by: str = "cli",
+) -> dict:
+    """Pyramid trend backtest — multi-lot position with LIFO exits."""
+    from strategies.pyramid_trend import PyramidTrendStrategy, PyramidLot
+
+    start_time = time.monotonic()
+    strategy = PyramidTrendStrategy(params)
+
+    # Load daily data (same query as standard backtest)
+    cur = conn.execute(
+        f"""SELECT i.date, i.rsi_14, i.rsi_7, i.ema_9, i.ema_20, i.ema_50, i.ema_200,
+                   i.sma_50, i.sma_200, i.macd, i.macd_signal, i.macd_hist,
+                   i.atr_14, i.bb_upper, i.bb_lower, i.bb_width, i.adx_14,
+                   i.obv, i.volume_sma_20, i.volume_ratio, i.regime_score,
+                   i.custom,
+                   d.open, d.high, d.low, d.close, d.volume
+            FROM {s}.indicators_daily i
+            JOIN LATERAL (
+                SELECT open, high, low, close, volume FROM {s}.ohlcv_daily
+                WHERE asset_id = i.asset_id AND date = i.date
+                ORDER BY venue_id LIMIT 1
+            ) d ON true
+            WHERE i.asset_id = %s AND i.date BETWEEN %s AND %s
+            ORDER BY i.date""",
+        (asset_id, date_from, date_to),
+    )
+    days = [dict(r) for r in cur.fetchall()]
+
+    if len(days) < 15:
+        return {"error": f"Insufficient data: {len(days)} days (need at least 15)"}
+
+    first_close = float(days[0]["close"])
+    last_close = float(days[-1]["close"])
+
+    # Simulation state
+    cash = float(initial_capital)
+    trades = []
+    equity_curve = []
+    peak_value = float(initial_capital)
+    max_drawdown = 0.0
+    max_dd_duration = 0
+    dd_start = None
+    trade_num = 0
+
+    slip = float(slippage_pct) / 100
+    fee_rate = float(taker_fee or Decimal("0.0025"))
+
+    # Pyramid lots
+    allocations = strategy.get_lot_allocations()
+    lots: dict[str, PyramidLot] = {
+        label: PyramidLot(label=label, allocation_pct=alloc)
+        for label, alloc in allocations.items()
+    }
+    base_entry_price = 0.0  # Lot A entry price (reference for pyramid thresholds)
+    total_allocation_pct = strategy.position.get("capital_per_trade_pct", 20) / 100
+    in_position = False  # True if any lot is open
+    cooldown_days = 0  # Wait after full exit before re-entry
+
+    for i, day in enumerate(days):
+        indicators = {k: float(v) if v is not None else None for k, v in day.items()
+                      if k not in ("date", "open", "high", "low", "volume", "custom")}
+        custom = day.get("custom")
+        if custom and isinstance(custom, dict):
+            for k, v in custom.items():
+                if v is not None:
+                    indicators[k] = float(v)
+        if i >= 5:
+            indicators["high_5d"] = max(float(days[j]["high"]) for j in range(i - 5, i))
+
+        close = float(day["close"])
+        high = float(day["high"])
+        open_price = float(days[i + 1]["open"]) if i + 1 < len(days) else close
+
+        # Update highest_since_entry for all open lots
+        for lot in lots.values():
+            if lot.is_open:
+                lot.highest_since_entry = max(lot.highest_since_entry, high)
+
+        # ── Exit checks (LIFO: D → C → B → A) ──
+        any_open = any(lot.is_open for lot in lots.values())
+
+        if any_open:
+            # Hard stop: if price drops significantly below base entry, exit ALL lots
+            hard_stop_triggered = False
+            hard_stop_pct = params.get("exit", {}).get("hard_stop_pct", 5.0)
+            if base_entry_price > 0:
+                drop_from_entry = (base_entry_price - close) / base_entry_price * 100
+                if drop_from_entry >= hard_stop_pct:
+                    hard_stop_triggered = True
+
+            for label in ["D", "C", "B", "A"]:
+                lot = lots[label]
+                if not lot.is_open:
+                    continue
+
+                exit_signal = None
+                if hard_stop_triggered:
+                    pnl_pct = (close - lot.entry_price) / lot.entry_price * 100
+                    exit_signal = type("Signal", (), {
+                        "side": "sell", "confidence": 1.0, "has_signal": True,
+                        "reasons": [f"Hard stop: price < base entry (PnL {pnl_pct:+.1f}%)"],
+                    })()
+                else:
+                    exit_signal = strategy.should_exit_lot(lot, close, indicators)
+
+                if exit_signal and getattr(exit_signal, "has_signal", exit_signal is not None):
+                    fill_price = close * (1 - slip)
+                    proceeds = lot.quantity * fill_price
+                    fees = proceeds * fee_rate
+                    cost_basis = lot.cost_basis
+                    pnl = proceeds - cost_basis - fees
+                    pnl_pct = (pnl / cost_basis * 100) if cost_basis > 0 else 0
+
+                    cash += proceeds - fees
+                    trade_num += 1
+                    trades.append({
+                        "trade_num": trade_num,
+                        "entry_date": lot.entry_date,
+                        "entry_price": lot.entry_price,
+                        "exit_date": str(day["date"]),
+                        "exit_price": fill_price,
+                        "exit_reason": (exit_signal.reasons[0] if exit_signal.reasons else f"Lot {label}")[:50],
+                        "side": "sell",
+                        "quantity": lot.quantity,
+                        "cost_basis_usd": cost_basis,
+                        "proceeds_usd": proceeds,
+                        "fees_usd": fees,
+                        "pnl_usd": pnl,
+                        "pnl_pct": pnl_pct,
+                        "lot": label,
+                    })
+
+                    lot.is_open = False
+                    lot.quantity = 0.0
+                    lot.entry_price = 0.0
+                    lot.highest_since_entry = 0.0
+
+        # Check if still in position after exits
+        any_open = any(lot.is_open for lot in lots.values())
+        if not any_open and in_position:
+            # Full exit — reset and start cooldown
+            in_position = False
+            base_entry_price = 0.0
+            cooldown_days = params.get("pyramid", {}).get("cooldown_days", 5)
+
+        # ── Pyramid: add lots B, C, D if base is open ──
+        if lots["A"].is_open and base_entry_price > 0:
+            for label in ["B", "C", "D"]:
+                lot = lots[label]
+                if lot.is_open:
+                    continue
+                if strategy.should_pyramid(label, base_entry_price, close):
+                    alloc = lot.allocation_pct / 100
+                    current_equity = cash + sum(l.quantity * close for l in lots.values() if l.is_open)
+                    trade_amount = current_equity * total_allocation_pct * alloc
+                    if trade_amount > cash:
+                        trade_amount = cash * 0.95  # Don't exhaust all cash
+                    fill_price = open_price * (1 + slip)
+                    quantity = trade_amount / fill_price
+                    fees = trade_amount * fee_rate
+
+                    if trade_amount > fees + 1:
+                        cash -= trade_amount + fees
+                        lot.is_open = True
+                        lot.entry_price = fill_price
+                        lot.quantity = quantity
+                        lot.highest_since_entry = fill_price
+                        lot.entry_date = str(days[i + 1]["date"] if i + 1 < len(days) else day["date"])
+
+        # ── Entry: Lot A (only if no position and no cooldown) ──
+        if not any_open and cooldown_days <= 0:
+            signal = strategy.evaluate_signal(indicators)
+            if signal.has_signal and signal.side == "buy":
+                alloc = lots["A"].allocation_pct / 100
+                current_equity = cash  # no open positions at entry
+                trade_amount = current_equity * total_allocation_pct * alloc
+                if trade_amount > cash:
+                    trade_amount = cash * 0.95
+                fill_price = open_price * (1 + slip)
+                quantity = trade_amount / fill_price
+                fees = trade_amount * fee_rate
+
+                if trade_amount > fees + 1:
+                    cash -= trade_amount + fees
+                    lots["A"].is_open = True
+                    lots["A"].entry_price = fill_price
+                    lots["A"].quantity = quantity
+                    lots["A"].highest_since_entry = fill_price
+                    lots["A"].entry_date = str(days[i + 1]["date"] if i + 1 < len(days) else day["date"])
+                    base_entry_price = fill_price
+                    in_position = True
+
+        if cooldown_days > 0:
+            cooldown_days -= 1
+
+        # Record equity
+        positions_value = sum(lot.quantity * close for lot in lots.values() if lot.is_open)
+        portfolio_value = cash + positions_value
+        hodl_value = float(initial_capital) * (close / first_close) if first_close > 0 else float(initial_capital)
+
+        if portfolio_value > peak_value:
+            peak_value = portfolio_value
+            dd_start = None
+        drawdown = (portfolio_value - peak_value) / peak_value * 100 if peak_value > 0 else 0
+        if drawdown < max_drawdown:
+            max_drawdown = drawdown
+            if dd_start is None:
+                dd_start = i
+            max_dd_duration = max(max_dd_duration, i - dd_start)
+
+        equity_curve.append({
+            "date": str(day["date"]),
+            "portfolio_value_usd": round(portfolio_value, 2),
+            "cash_usd": round(cash, 2),
+            "positions_value_usd": round(positions_value, 2),
+            "hodl_value_usd": round(hodl_value, 2),
+            "drawdown_pct": round(drawdown, 4),
+        })
+
+    # Close remaining lots at last close
+    for label in ["D", "C", "B", "A"]:
+        lot = lots[label]
+        if not lot.is_open:
+            continue
+        fill_price = last_close * (1 - slip)
+        proceeds = lot.quantity * fill_price
+        fees = proceeds * fee_rate
+        cost_basis = lot.cost_basis
+        pnl = proceeds - cost_basis - fees
+        pnl_pct = (pnl / cost_basis * 100) if cost_basis > 0 else 0
+        cash += proceeds - fees
+        trade_num += 1
+        trades.append({
+            "trade_num": trade_num,
+            "entry_date": lot.entry_date,
+            "entry_price": lot.entry_price,
+            "exit_date": str(days[-1]["date"]),
+            "exit_price": fill_price,
+            "exit_reason": "end_of_period",
+            "side": "sell",
+            "quantity": lot.quantity,
+            "cost_basis_usd": cost_basis,
+            "proceeds_usd": proceeds,
+            "fees_usd": fees,
+            "pnl_usd": pnl,
+            "pnl_pct": pnl_pct,
+            "lot": label,
+        })
+        lot.is_open = False
+
+    # Compute metrics
+    final_value = cash
+    total_return = final_value - float(initial_capital)
+    total_return_pct = total_return / float(initial_capital) * 100
+    hodl_return_pct = ((last_close - first_close) / first_close * 100) if first_close > 0 else 0
+
+    sell_trades = [t for t in trades if t.get("pnl_usd") is not None]
+    wins = [t for t in sell_trades if t["pnl_usd"] > 0]
+    losses = [t for t in sell_trades if t["pnl_usd"] <= 0]
+
+    # Count pyramid sequences (how many times Lot A opened)
+    lot_a_trades = [t for t in trades if t.get("lot") == "A"]
+
+    run_duration = int((time.monotonic() - start_time) * 1000)
+
+    result = {
+        "strategy_name": strategy_name,
+        "strategy_type": strategy_type,
+        "period": f"{date_from} to {date_to} ({len(days)} days)",
+        "initial_capital": float(initial_capital),
+        "performance": {
+            "total_return_pct": round(total_return_pct, 4),
+            "total_return_usd": round(total_return, 2),
+            "hodl_return_pct": round(hodl_return_pct, 4),
+            "alpha_pct": round(total_return_pct - hodl_return_pct, 4),
+            "max_drawdown_pct": round(max_drawdown, 4),
+            "max_drawdown_duration_days": max_dd_duration,
+        },
+        "trades": {
+            "total": len(sell_trades),
+            "winning": len(wins),
+            "losing": len(losses),
+            "win_rate": round(len(wins) / len(sell_trades), 4) if sell_trades else 0,
+            "avg_win_pct": round(sum(t["pnl_pct"] for t in wins) / len(wins), 4) if wins else 0,
+            "avg_loss_pct": round(sum(t["pnl_pct"] for t in losses) / len(losses), 4) if losses else 0,
+        },
+        "pyramid": {
+            "sequences": len(lot_a_trades),
+            "lots_per_sequence": {
+                label: len([t for t in trades if t.get("lot") == label])
+                for label in ["A", "B", "C", "D"]
+            },
+        },
+        "run_duration_ms": run_duration,
+    }
+
+    # Save to DB (same schema as standard backtest)
+    cur = conn.execute(
+        f"""INSERT INTO {s}.backtest_runs
+            (sweep_id, strategy_name, strategy_type, strategy_params, asset_id, venue_id,
+             date_from, date_to, initial_capital_usd, slippage_pct, maker_fee, taker_fee,
+             total_return_pct, total_return_usd, hodl_return_pct, alpha_pct,
+             total_trades, winning_trades, losing_trades, win_rate,
+             avg_win_pct, avg_loss_pct, max_drawdown_pct, max_drawdown_duration_days,
+             run_duration_ms, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id""",
+        (
+            sweep_id, strategy_name, strategy_type, json.dumps(params), asset_id, venue_id,
+            date_from, date_to, initial_capital, slippage_pct, maker_fee, taker_fee,
+            Decimal(str(result["performance"]["total_return_pct"])),
+            Decimal(str(result["performance"]["total_return_usd"])),
+            Decimal(str(result["performance"]["hodl_return_pct"])),
+            Decimal(str(result["performance"]["alpha_pct"])),
+            result["trades"]["total"], result["trades"]["winning"], result["trades"]["losing"],
+            Decimal(str(result["trades"]["win_rate"])),
+            Decimal(str(result["trades"]["avg_win_pct"])),
+            Decimal(str(result["trades"]["avg_loss_pct"])),
+            Decimal(str(result["performance"]["max_drawdown_pct"])),
+            result["performance"]["max_drawdown_duration_days"],
+            run_duration, created_by,
+        ),
+    )
+    run_id = cur.fetchone()["id"]
+    result["run_id"] = run_id
+
+    for t in sell_trades:
+        conn.execute(
+            f"""INSERT INTO {s}.backtest_trades
+                (run_id, trade_num, entry_date, entry_price, entry_signal_confidence, entry_reasons,
+                 exit_date, exit_price, exit_reason, side, quantity,
+                 cost_basis_usd, proceeds_usd, fees_usd, pnl_usd, pnl_pct)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                run_id, t["trade_num"], t.get("entry_date"), t.get("entry_price"),
+                None, None,
+                t.get("exit_date"), t.get("exit_price"), (t.get("exit_reason") or "")[:32],
+                "sell", t["quantity"],
+                Decimal(str(t.get("cost_basis_usd", 0))),
+                Decimal(str(t.get("proceeds_usd", 0))),
+                Decimal(str(t.get("fees_usd", 0))),
+                Decimal(str(t["pnl_usd"])),
+                Decimal(str(t["pnl_pct"])),
+            ),
+        )
+
     for e in equity_curve:
         conn.execute(
             f"""INSERT INTO {s}.backtest_equity

@@ -38,11 +38,27 @@ class PrivatePoller(BasePoller):
         logger.info(f"[private] Exchange: {self.exchange_id}")
 
     async def cycle(self) -> None:
-        """Sync balances, detect fills, check anomalies, sync fees (daily)."""
-        await self._sync_balances()
-        await self._sync_orders()
-        await self._check_anomalies()
-        await self._sync_fees_if_due()
+        """Sync balances, detect fills, check anomalies, sync fees + funding rate.
+
+        Each step is independent — one failure doesn't block others.
+        """
+        errors = []
+
+        for name, func in [
+            ("sync_balances", self._sync_balances),
+            ("sync_orders", self._sync_orders),
+            ("check_anomalies", self._check_anomalies),
+            ("sync_fees", self._sync_fees_if_due),
+            ("sync_funding_rates", self._sync_funding_rates),
+        ]:
+            try:
+                await func()
+            except Exception as e:
+                logger.error(f"[private] {name} failed: {e}")
+                errors.append(name)
+
+        if errors:
+            logger.warning(f"[private] Cycle completed with errors in: {', '.join(errors)}")
 
     async def _sync_balances(self) -> None:
         """Fetch exchange balances and update DB.
@@ -243,6 +259,72 @@ class PrivatePoller(BasePoller):
                 logger.info(f"[private] Updated fees for {updated} pairs")
 
         self._last_fee_sync = now
+
+    async def _sync_funding_rates(self) -> None:
+        """Fetch funding rates for perpetual pairs (loaded from DB) and store in indicators_intraday.custom."""
+        s = schema()
+
+        async with async_conn() as conn:
+            venue_row = await conn.fetchrow(
+                f"SELECT id FROM {s}.venues WHERE code = $1 AND deleted_at IS NULL",
+                self.exchange_id,
+            )
+            if not venue_row:
+                return
+            venue_id = venue_row["id"]
+
+            # Load perpetual pairs from trading_pairs (type=swap identified by ':' in pair_symbol)
+            perp_rows = await conn.fetch(
+                f"""SELECT tp.pair_symbol, a.symbol AS base_symbol, a.id AS asset_id
+                    FROM {s}.trading_pairs tp
+                    JOIN {s}.assets a ON a.id = tp.base_asset_id
+                    WHERE tp.venue_id = $1 AND tp.is_active = true AND tp.is_current = true
+                      AND tp.pair_symbol LIKE '%%:%%'""",
+                venue_id,
+            )
+
+            # If no perp pairs in DB, try deriving from spot pairs
+            if not perp_rows:
+                spot_rows = await conn.fetch(
+                    f"""SELECT tp.pair_symbol, a.symbol AS base_symbol, a.id AS asset_id
+                        FROM {s}.trading_pairs tp
+                        JOIN {s}.assets a ON a.id = tp.base_asset_id
+                        WHERE tp.venue_id = $1 AND tp.is_active = true AND tp.is_current = true
+                          AND tp.pair_symbol NOT LIKE '%%:%%'""",
+                    venue_id,
+                )
+                # Derive perp symbol: BTC/USD → BTC/USD:USD
+                perp_rows = []
+                for row in spot_rows:
+                    quote = row["pair_symbol"].split("/")[1] if "/" in row["pair_symbol"] else "USD"
+                    perp_rows.append({
+                        "pair_symbol": f"{row['pair_symbol']}:{quote}",
+                        "base_symbol": row["base_symbol"],
+                        "asset_id": row["asset_id"],
+                    })
+
+            for row in perp_rows:
+                try:
+                    fr = self.exchange.exchange.fetch_funding_rate(row["pair_symbol"])
+                    rate = fr.get("fundingRate")
+                    if rate is None:
+                        continue
+
+                    await conn.execute(
+                        f"""UPDATE {s}.indicators_intraday
+                            SET custom = custom || $1::jsonb
+                            WHERE id = (
+                                SELECT id FROM {s}.indicators_intraday
+                                WHERE asset_id = $2 AND venue_id = $3
+                                ORDER BY timestamp DESC LIMIT 1
+                            )""",
+                        json.dumps({"funding_rate": float(rate)}),
+                        row["asset_id"], venue_id,
+                    )
+
+                    logger.debug(f"[private] Funding rate {row['base_symbol']}: {rate}")
+                except Exception as e:
+                    logger.debug(f"[private] Funding rate {row['pair_symbol']}: {e}")
 
     async def teardown(self) -> None:
         await close_async_pool()

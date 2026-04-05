@@ -70,18 +70,18 @@ RECURRING_TASKS = [
         "recurrence_minutes": 1440,
     },
 
-    # ROBIN — Trading Operations Engineer
+    # ROBIN — Operations
     {
         "key": "ROB-001",
         "title": "System Health Check",
         "description": (
-            "Run system health check: verify DB connections, check container status, "
-            "review recent error logs, check disk usage. Report any anomalies."
+            "Run system health check: verify DB connections, check poller status "
+            "(cli.market poller-status), review recent error logs. Report any anomalies to Discord."
         ),
         "assigned_to": "robin",
         "priority": "medium",
-        "tags": ["schedule:daily@09:30", "operations", "monitoring"],
-        "schedule_at": "01:30",  # 09:30 SGT
+        "tags": ["schedule:daily@01:30", "operations", "monitoring"],
+        "schedule_at": "01:30",
         "recurrence_minutes": 1440,
     },
     {
@@ -93,8 +93,8 @@ RECURRING_TASKS = [
         ),
         "assigned_to": "robin",
         "priority": "low",
-        "tags": ["schedule:daily@18:00", "operations", "reporting"],
-        "schedule_at": "10:00",  # 18:00 SGT
+        "tags": ["schedule:daily@22:00", "operations", "reporting"],
+        "schedule_at": "22:00",
         "recurrence_minutes": 1440,
     },
     {
@@ -107,61 +107,75 @@ RECURRING_TASKS = [
         "assigned_to": "robin",
         "priority": "medium",
         "tags": ["schedule:weekly@MON:10:00", "retrospective", "team"],
-        "schedule_at": "02:00",  # MON 10:00 SGT
-        "recurrence_minutes": 10080,  # 7 days
+        "schedule_at": "10:00",
+        "recurrence_minutes": 10080,
     },
     {
         "key": "ROB-004",
         "title": "Review Mission Board",
         "description": (
             "Check mission board for unclaimed backlog tasks. If any match your skills "
-            "(coding, infrastructure, operations), self-assign and start working."
+            "(coding, infrastructure, operations, trading), self-assign and start working. "
+            "Follow the task_management skill: check WHY, WHAT, FOLLOW-UP."
         ),
         "assigned_to": "robin",
         "priority": "low",
         "tags": ["schedule:daily@08:00", "operations", "tasks"],
-        "schedule_at": "00:00",  # 08:00 SGT
+        "schedule_at": "08:00",
         "recurrence_minutes": 1440,
     },
 
-    # ROBIN — Trading Tasks
+    # ROBIN — Trading: DCA Grid + Signal Scan
     {
         "key": "ROB-010",
-        "title": "Hourly Signal Scan",
+        "title": "Hourly Trading Decisions",
         "description": (
-            "Run trading signal scan. Equip skill: trading_signal_workflow. "
-            "Execute: cd /opt/inotagent-trading && python -m cli.signals scan. "
-            "If signals found, evaluate confidence and execute trades per the workflow. "
-            "If filters block signals, report to Discord and wait."
+            "Hourly trading decision loop. Grid monitoring is handled by TA poller (every 60s, no LLM). "
+            "Robin focuses on decisions that need reasoning: "
+            "1. cli.grid status — check if any cycles need opening, regime transitions, or adjustments. "
+            "2. For each asset with no active grid cycle: evaluate entry conditions → cli.grid open if conditions pass. "
+            "3. Check regime score: if RS crossed 65 → cancel unfilled grid levels, note for trend follow. "
+            "4. cli.signals scan — check swing strategies (momentum, trend follow) for entry signals. "
+            "5. If signal found and guards pass, execute trade per trading_signal_workflow skill. "
+            "6. If blocked by filters, log reason and wait."
         ),
         "assigned_to": "robin",
         "priority": "high",
-        "tags": ["schedule:hourly", "trading", "signals"],
+        "tags": ["schedule:hourly", "trading", "signals", "grid"],
         "schedule_at": None,
         "recurrence_minutes": 60,
     },
     {
         "key": "ROB-011",
-        "title": "Daily Market Overview + P&L",
+        "title": "Daily Market Overview + Sentiment + P&L",
         "description": (
-            "Run daily trading review. Equip skill: trading_portfolio_management. "
-            "Execute: cli.market overview, cli.portfolio pnl --period today, "
-            "cli.portfolio balance, cli.portfolio snapshot. "
-            "Post daily P&L summary to Discord."
+            "Daily trading review with sentiment analysis. "
+            "1. cli.market overview — check prices, regime, TA for all assets. "
+            "2. cli.market fetch-sentiment — fetch Fear & Greed Index. "
+            "3. Read top crypto headlines (browser tool) and score sentiment. "
+            "   Store score: cli.market sentiment --news-score <score>. "
+            "4. cli.portfolio pnl --period today — review today's P&L. "
+            "5. cli.portfolio balance — check positions across venues. "
+            "6. cli.grid status — review active/expired grid cycles. "
+            "7. cli.portfolio snapshot — take daily snapshot. "
+            "8. Post to Discord: daily P&L + sentiment summary + grid cycle status."
         ),
         "assigned_to": "robin",
         "priority": "medium",
-        "tags": ["schedule:daily@10:00", "trading", "portfolio"],
+        "tags": ["schedule:daily@10:00", "trading", "portfolio", "market"],
         "schedule_at": "10:00",
         "recurrence_minutes": 1440,
     },
     {
         "key": "ROB-012",
-        "title": "Daily OHLCV + TA Refresh",
+        "title": "Daily Data Refresh",
         "description": (
-            "Fetch latest daily OHLCV data and recompute daily TA indicators. "
-            "Execute: cli.market fetch-daily, cli.market compute-daily-ta. "
-            "Check cli.market coverage for data gaps."
+            "Fetch latest data and recompute indicators. "
+            "1. cli.market fetch-daily — fetch daily OHLCV from CoinGecko for all assets. "
+            "2. cli.market compute-daily-ta — recompute daily TA indicators. "
+            "3. cli.market fetch-sentiment — update Fear & Greed Index. "
+            "4. cli.market coverage — check for data gaps. "
+            "5. cli.market sync-fees — sync trading fees from exchange."
         ),
         "assigned_to": "robin",
         "priority": "medium",
@@ -173,11 +187,15 @@ RECURRING_TASKS = [
         "key": "ROB-013",
         "title": "Weekly Trading Performance Review",
         "description": (
-            "Run weekly trading performance review. Equip skill: trading_portfolio_management. "
-            "Execute: cli.portfolio pnl --period week, cli.portfolio benchmark --days 7. "
-            "Review each strategy's performance: win rate trend, consecutive losses, "
-            "drawdown. If any strategy has 3+ consecutive losses, deactivate and report. "
-            "Post weekly summary to Discord with CONTINUE/PAUSE/ADJUST recommendation per strategy."
+            "Weekly review of all trading activity. "
+            "1. cli.portfolio pnl --period week — weekly P&L. "
+            "2. cli.portfolio benchmark --days 7 — strategy vs HODL. "
+            "3. cli.grid status — review all grid cycles (active, expired, closed). "
+            "4. cli.market sentiment — check 7-day sentiment trend. "
+            "5. Review each strategy: win rate, consecutive losses, drawdown. "
+            "6. If any strategy has 3+ consecutive losses → deactivate and report. "
+            "7. If grid fill rate is low → consider adjusting grid spacing. "
+            "8. Post weekly summary to Discord with CONTINUE/PAUSE/ADJUST per strategy."
         ),
         "assigned_to": "robin",
         "priority": "medium",
@@ -189,10 +207,11 @@ RECURRING_TASKS = [
         "key": "ROB-014",
         "title": "Weekly Backtest Re-evaluation",
         "description": (
-            "Re-run backtests with latest 12 months of data for all active strategies. "
-            "Execute: cli.backtest run --strategy <name> --from <12mo_ago> --to today. "
-            "Compare with previous backtest results. If Sharpe declining or win rate dropping, "
-            "run param sweep to find better settings. Report findings to Discord."
+            "Re-run backtests with latest data for active strategies. "
+            "1. cli.backtest run --strategy <name> --from <6mo_ago> --to today — for each active strategy. "
+            "2. Compare with previous backtest. If performance degrading, run param sweep. "
+            "3. Check if grid params need updating based on changed volatility regime. "
+            "4. Report findings to Discord with recommendations."
         ),
         "assigned_to": "robin",
         "priority": "low",
